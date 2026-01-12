@@ -192,9 +192,14 @@
               <div class="mapThumb big"></div>
               <div class="mapName big">{{ match.map ?? 'Mapa no definido' }}</div>
 
-              <a class="btn primary" href="steam://connect/45.235.98.222:27159">
-                Acceder a partida
-              </a>
+              @if (connection) {
+                <a
+                  class="btn primary"
+                  [href]="isParticipant ? connection.connectUrl : connection.spectateUrl"
+                >
+                  {{ isParticipant ? 'Ingresar al servidor' : 'Ingresar como espectador' }}
+                </a>
+              }
             </div>
 
             @if (canFinalize) {

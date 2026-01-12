@@ -9,6 +9,11 @@ type SteamMe = {
   profileUrl: string;
 };
 
+type ServerConnection = {
+  connectUrl: string;
+  spectateUrl: string;
+};
+
 @Component({
   standalone: true,
   selector: 'app-match-board',
@@ -40,6 +45,7 @@ export class MatchBoardComponent {
   // opcional (si lo pasás desde dashboard)
   @Input() leaderA: string | null = null;
   @Input() leaderB: string | null = null;
+  @Input() connection: ServerConnection | null = null;
 
   // UI state local
   selectedId: string | null = null;
@@ -106,10 +112,16 @@ export class MatchBoardComponent {
   /** Soy líder y es mi turno para banear? */
   get canBan(): boolean {
     if (this.match?.estado !== 'seleccionando_mapa') return false;
+    if (this.match?.map) return false;
     if (!this.mySteamId) return false;
 
     if (this.mapTurn === 'team1') return this.mySteamId === this.leaderAId;
     return this.mySteamId === this.leaderBId;
+  }
+
+  get isParticipant(): boolean {
+    if (!this.mySteamId) return false;
+    return this.teamA.includes(this.mySteamId) || this.teamB.includes(this.mySteamId);
   }
 
   get canFinalize(): boolean {
