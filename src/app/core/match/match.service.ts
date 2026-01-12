@@ -31,10 +31,6 @@ export type MatchDoc = {
   team2: { name: string; players: string[] };
 
   queue: string[];
-  mapPool?: string[];
-  bannedMaps?: string[];
-  mapTurn?: 'team1' | 'team2';
-  mapBanIndex?: number;
 
   // campos “extra” que ya estás usando en functions
   unassigned?: string[];
@@ -62,10 +58,10 @@ function initialMatch(): MatchDoc {
     team1: { name: 'Team A', players: [] },
     team2: { name: 'Team B', players: [] },
     queue: [],
-    mapPool: [],
+    mapPool: [...DEFAULT_MAP_POOL],
     bannedMaps: [],
     mapTurn: 'team1',
-    mapBanIndex: 0,
+    mapBanCount: 0,
     updatedAt: serverTimestamp(),
   };
 }
@@ -252,12 +248,140 @@ export class MatchService {
         update.queue = []; // ya no se usa queue en esta fase
         update.unassigned = [];
         update.mapTurn = 'team1';
-        update.mapBanIndex = 0;
+        update.mapBanCount = 0;
         update.bannedMaps = [];
-        update.mapPool = Array.isArray(match.mapPool) ? [...match.mapPool] : [];
+        update.mapPool = Array.isArray(match.mapPool)
+          ? [...match.mapPool]
+          : [...DEFAULT_MAP_POOL];
       }
 
       tx.update(this.matchRef, update);
+    });
+  }
+
+  /**
+   * Baneo de mapas:
+   * - solo en estado seleccionando_mapa
+   * - solo líder del turno
+   * - no permite banear ya baneados
+   * - cuando queda 1 mapa -> se define match.map
+   */
+  async banMap(mySteamId: string, mapName: string): Promise<void> {
+    if (!mySteamId || !mapName) return;
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(this.matchRef);
+      if (!snap.exists()) throw new Error('Match no existe.');
+
+      const match = snap.data() as MatchDoc;
+
+      if (match.estado !== 'seleccionando_mapa') {
+        throw new Error(`No se puede banear: estado = ${match.estado}`);
+      }
+
+      const team1 = match.team1?.players ?? [];
+      const team2 = match.team2?.players ?? [];
+      const leaderA = team1[0] ?? null;
+      const leaderB = team2[0] ?? null;
+
+      if (!leaderA || !leaderB) {
+        throw new Error('No hay líderes definidos.');
+      }
+
+      const turn: 'team1' | 'team2' = match.mapTurn === 'team2' ? 'team2' : 'team1';
+      if (turn === 'team1' && mySteamId !== leaderA) {
+        throw new Error('No sos el líder de Team A o no es tu turno.');
+      }
+      if (turn === 'team2' && mySteamId !== leaderB) {
+        throw new Error('No sos el líder de Team B o no es tu turno.');
+      }
+
+      const pool = Array.isArray(match.mapPool) && match.mapPool.length > 0
+        ? [...match.mapPool]
+        : [...DEFAULT_MAP_POOL];
+
+      if (!pool.includes(mapName)) {
+        throw new Error('Ese mapa no está en el pool.');
+      }
+
+      const banned = Array.isArray(match.bannedMaps) ? [...match.bannedMaps] : [];
+      if (banned.includes(mapName)) {
+        throw new Error('Ese mapa ya está baneado.');
+      }
+
+      const nextBanned = [...banned, mapName];
+      const remaining = pool.filter((m) => !nextBanned.includes(m));
+
+      if (remaining.length === 0) {
+        throw new Error('No quedan mapas disponibles.');
+      }
+
+      const nextTurn: 'team1' | 'team2' = turn === 'team1' ? 'team2' : 'team1';
+      const banCount = (match.mapBanCount ?? banned.length) + 1;
+
+      const update: any = {
+        bannedMaps: nextBanned,
+        mapTurn: nextTurn,
+        mapBanCount: banCount,
+        mapPool: pool,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (remaining.length === 1) {
+        update.map = remaining[0];
+      }
+
+      tx.update(this.matchRef, update);
+    });
+  }
+
+  /**
+   * Confirmación de fin de match por líderes:
+   * - solo en estado en_curso
+   * - cuando ambos líderes confirman -> reset al estado inicial
+   */
+  async requestFinalizeMatch(mySteamId: string): Promise<void> {
+    if (!mySteamId) return;
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(this.matchRef);
+      if (!snap.exists()) throw new Error('Match no existe.');
+
+      const match = snap.data() as MatchDoc;
+
+      if (match.estado !== 'en_curso') {
+        throw new Error(`No se puede finalizar: estado = ${match.estado}`);
+      }
+
+      const team1 = match.team1?.players ?? [];
+      const team2 = match.team2?.players ?? [];
+      const leaderA = team1[0] ?? null;
+      const leaderB = team2[0] ?? null;
+
+      if (!leaderA || !leaderB) {
+        throw new Error('No hay líderes definidos.');
+      }
+
+      if (mySteamId !== leaderA && mySteamId !== leaderB) {
+        throw new Error('Solo los líderes pueden finalizar el match.');
+      }
+
+      const finalizedBy = Array.isArray(match.finalizeBy) ? [...match.finalizeBy] : [];
+      if (finalizedBy.includes(mySteamId)) return;
+
+      finalizedBy.push(mySteamId);
+
+      const bothConfirmed = finalizedBy.includes(leaderA) && finalizedBy.includes(leaderB);
+
+      if (bothConfirmed) {
+        tx.set(this.matchRef, initialMatch(), { merge: false });
+        return;
+      }
+
+      tx.update(this.matchRef, {
+        finalizeBy: finalizedBy,
+        updatedAt: serverTimestamp(),
+      });
     });
   }
 
