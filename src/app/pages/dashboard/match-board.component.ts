@@ -18,6 +18,16 @@ type SteamMe = {
 export class MatchBoardComponent {
   private matchSvc = inject(MatchService);
 
+  readonly mapPool = [
+    'de_inferno',
+    'de_mirage',
+    'de_nuke',
+    'de_overpass',
+    'de_ancient',
+    'de_vertigo',
+    'de_anubis',
+  ];
+
   @Input({ required: true }) match!: MatchDoc;
   @Input({ required: true }) showDetails = true;
 
@@ -35,6 +45,8 @@ export class MatchBoardComponent {
   selectedId: string | null = null;
   busyPick = false;
   pickErr = '';
+  busyBan = false;
+  banErr = '';
 
   get teamA() {
     return this.match?.team1?.players ?? [];
@@ -64,6 +76,10 @@ export class MatchBoardComponent {
     return t === 'team2' ? 'team2' : 'team1';
   }
 
+  get mapTurn(): 'team1' | 'team2' {
+    return this.match?.mapTurn === 'team2' ? 'team2' : 'team1';
+  }
+
   isLeaderA(id: string): boolean {
     return !!id && id === this.leaderAId;
   }
@@ -79,6 +95,23 @@ export class MatchBoardComponent {
 
     if (this.turn === 'team1') return this.mySteamId === this.leaderAId;
     return this.mySteamId === this.leaderBId;
+  }
+
+  /** Soy líder y es mi turno para banear? */
+  get canBan(): boolean {
+    if (this.match?.estado !== 'seleccionando_mapa') return false;
+    if (!this.mySteamId) return false;
+
+    if (this.mapTurn === 'team1') return this.mySteamId === this.leaderAId;
+    return this.mySteamId === this.leaderBId;
+  }
+
+  get bannedMaps(): string[] {
+    return Array.isArray(this.match?.bannedMaps) ? this.match.bannedMaps : [];
+  }
+
+  isBanned(mapName: string): boolean {
+    return this.bannedMaps.includes(mapName);
   }
 
   /** Lista de disponibles en el centro */
@@ -101,6 +134,22 @@ export class MatchBoardComponent {
     // UI: cualquiera puede seleccionar para mirar, pero el pick solo lo puede ejecutar el líder
     this.selectedId = this.selectedId === id ? null : id;
     this.pickErr = '';
+  }
+
+  async onBanMap(mapName: string): Promise<void> {
+    if (!this.canBan) return;
+    if (!mapName || this.isBanned(mapName)) return;
+
+    try {
+      this.busyBan = true;
+      this.banErr = '';
+
+      await this.matchSvc.banMap(this.mySteamId!, mapName);
+    } catch (e: any) {
+      this.banErr = e?.message ?? String(e);
+    } finally {
+      this.busyBan = false;
+    }
   }
 
   async onPick(): Promise<void> {

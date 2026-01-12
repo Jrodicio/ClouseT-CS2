@@ -149,17 +149,40 @@
 
           @case ('seleccionando_mapa') {
             <div class="center__title">Baneo de mapas</div>
-            <div class="hint">Acá listamos 7 mapas. (Bans vienen después)</div>
+            <div class="hint">
+              Turno: <b>{{ mapTurn === 'team1' ? (match.team1?.name ?? 'Team A') : (match.team2?.name ?? 'Team B') }}</b>
+              · Bans: <b>{{ match.mapBanCount ?? 0 }}</b>
+              · Restantes: <b>{{ mapPool.length - bannedMaps.length }}</b>
+            </div>
+
+            @if (canBan) {
+              <div class="hint">Es tu turno. Elegí un mapa para banear.</div>
+            } @else {
+              <div class="hint">Solo el líder del turno puede banear.</div>
+            }
 
             <div class="mapList">
-              @for (m of ['de_inferno','de_mirage','de_nuke','de_overpass','de_ancient','de_vertigo','de_anubis']; track m) {
-                <div class="mapRow">
+              @for (m of mapPool; track m) {
+                <div class="mapRow" [class.banned]="isBanned(m)">
                   <div class="mapThumb"></div>
                   <div class="mapName">{{ m }}</div>
-                  <button class="btn" type="button">Ban</button>
+                  <button
+                    class="btn"
+                    type="button"
+                    [disabled]="busyBan || !canBan || isBanned(m)"
+                    (click)="onBanMap(m)"
+                  >
+                    {{ isBanned(m) ? 'Baneado' : (busyBan ? 'Baneando…' : 'Ban') }}
+                  </button>
                 </div>
               }
             </div>
+
+            @if (banErr) {
+              <div class="err">
+                {{ banErr }}
+              </div>
+            }
           }
 
           @case ('en_curso') {
