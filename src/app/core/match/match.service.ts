@@ -31,6 +31,10 @@ export type MatchDoc = {
   team2: { name: string; players: string[] };
 
   queue: string[];
+  mapPool?: string[];
+  bannedMaps?: string[];
+  mapTurn?: 'team1' | 'team2';
+  mapBanIndex?: number;
 
   // campos “extra” que ya estás usando en functions
   unassigned?: string[];
@@ -57,6 +61,10 @@ function initialMatch(): MatchDoc {
     team1: { name: 'Team A', players: [] },
     team2: { name: 'Team B', players: [] },
     queue: [],
+    mapPool: [],
+    bannedMaps: [],
+    mapTurn: 'team1',
+    mapBanIndex: 0,
     updatedAt: serverTimestamp(),
   };
 }
@@ -242,83 +250,10 @@ export class MatchService {
         update.estado = 'seleccionando_mapa';
         update.queue = []; // ya no se usa queue en esta fase
         update.unassigned = [];
-        update.map = null;
-        update.mapPool = [...DEFAULT_MAP_POOL];
-        update.bannedMaps = [];
         update.mapTurn = 'team1';
-        update.mapBanCount = 0;
-      }
-
-      tx.update(this.matchRef, update);
-    });
-  }
-
-  /**
-   * Ban REAL por transacción:
-   * - solo en estado seleccionando_mapa
-   * - solo si sos líder del team que tiene el turno
-   * - agrega mapa a bannedMaps y alterna turno
-   * - cuando queda 1 mapa disponible, setea map y pasa a en_curso
-   */
-  async banMap(mySteamId: string, mapName: string): Promise<void> {
-    if (!mySteamId || !mapName) return;
-
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(this.matchRef);
-      if (!snap.exists()) throw new Error('Match no existe.');
-
-      const match = snap.data() as MatchDoc;
-
-      if (match.estado !== 'seleccionando_mapa') {
-        throw new Error(`No se puede banear: estado = ${match.estado}`);
-      }
-
-      const team1 = match.team1?.players ? [...match.team1.players] : [];
-      const team2 = match.team2?.players ? [...match.team2.players] : [];
-      const leaderA = team1[0] ?? null;
-      const leaderB = team2[0] ?? null;
-
-      if (!leaderA || !leaderB) {
-        throw new Error('No hay líderes definidos todavía.');
-      }
-
-      const mapPool = Array.isArray(match.mapPool) && match.mapPool.length
-        ? [...match.mapPool]
-        : [...DEFAULT_MAP_POOL];
-      const bannedMaps = Array.isArray(match.bannedMaps) ? [...match.bannedMaps] : [];
-      const mapTurn: 'team1' | 'team2' = match.mapTurn === 'team2' ? 'team2' : 'team1';
-
-      if (!mapPool.includes(mapName)) {
-        throw new Error('Mapa inválido para el pool actual.');
-      }
-
-      if (bannedMaps.includes(mapName)) {
-        throw new Error('Ese mapa ya fue baneado.');
-      }
-
-      if (mapTurn === 'team1') {
-        if (mySteamId !== leaderA) throw new Error('No sos el líder de Team A o no es tu turno.');
-      } else {
-        if (mySteamId !== leaderB) throw new Error('No sos el líder de Team B o no es tu turno.');
-      }
-
-      const nextBanned = [...bannedMaps, mapName];
-      const remaining = mapPool.filter((m) => !nextBanned.includes(m));
-
-      const nextTurn: 'team1' | 'team2' = mapTurn === 'team1' ? 'team2' : 'team1';
-      const nextBanCount = (match.mapBanCount ?? 0) + 1;
-
-      const update: any = {
-        mapPool,
-        bannedMaps: nextBanned,
-        mapTurn: nextTurn,
-        mapBanCount: nextBanCount,
-        updatedAt: serverTimestamp(),
-      };
-
-      if (remaining.length === 1) {
-        update.map = remaining[0];
-        update.estado = 'en_curso';
+        update.mapBanIndex = 0;
+        update.bannedMaps = [];
+        update.mapPool = Array.isArray(match.mapPool) ? [...match.mapPool] : [];
       }
 
       tx.update(this.matchRef, update);
