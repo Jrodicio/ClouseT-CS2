@@ -193,6 +193,17 @@ export const matchOrchestrator = onDocumentWritten(
 );
 
 // ====== Util: ejecutar comando en Pterodactyl (Client API) ======
+class PterodactylCommandError extends Error {
+  status: number;
+  body: string;
+
+  constructor(status: number, body: string) {
+    super(`Pterodactyl command failed: HTTP ${status} ${body}`.trim());
+    this.status = status;
+    this.body = body;
+  }
+}
+
 async function pteroSendCommand(command: string): Promise<void> {
   const panelOrigin = PTERO_PANEL_ORIGIN.value(); // ej https://pterodactyl.histeriaservers.com.ar
   const serverId = PTERO_SERVER_ID.value(); // ej ba39664e
@@ -220,7 +231,7 @@ async function pteroSendCommand(command: string): Promise<void> {
 
   if (!r.ok) {
     const t = await r.text().catch(() => '');
-    throw new Error(`Pterodactyl command failed: HTTP ${r.status} ${t}`.trim());
+    throw new PterodactylCommandError(r.status, t);
   }
 }
 
@@ -252,6 +263,7 @@ async function uploadMatchJsonAndSign(matchJson: any): Promise<string> {
 type StartMatchResult =
   | { ok: true; command: string; signedUrl: string }
   | { ok: false; reason: 'NOT_READY' | 'LOCKED' | 'NOT_FOUND' }
+  | { ok: false; reason: 'UNAUTHENTICATED'; error: string }
   | { ok: false; reason: 'FAILED'; error: string };
 
 async function startMatchIfReady(): Promise<StartMatchResult> {
@@ -332,6 +344,19 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     logger.error(`startMatchIfReady failed: ${msg}`);
+
+    if (err instanceof PterodactylCommandError && err.status === 401) {
+      const authMsg =
+        'Pterodactyl unauthenticated: verify PTERO_CLIENT_KEY, PTERO_SERVER_ID, and PTERO_PANEL_ORIGIN';
+      await ref.update({
+        startInProgress: false,
+        startError: authMsg,
+        startFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: false, reason: 'UNAUTHENTICATED', error: authMsg };
+    }
 
     await ref.update({
       startInProgress: false,
@@ -671,6 +696,11 @@ export const api = onRequest(
           return;
         }
 
+        if (startResult.reason === 'UNAUTHENTICATED') {
+          res.status(502).json({ ok: false, startResult, connection });
+          return;
+        }
+
         res.status(502).json({ ok: false, startResult, connection });
         return;
       } catch (e: any) {
@@ -692,6 +722,8 @@ export const api = onRequest(
         res.status(423).json(r);
       } else if (r.reason === 'NOT_FOUND') {
         res.status(404).json(r);
+      } else if (r.reason === 'UNAUTHENTICATED') {
+        res.status(502).json(r);
       } else {
         res.status(500).json(r);
       }
