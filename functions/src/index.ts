@@ -46,6 +46,16 @@ const MATCH_DOC_PATH = 'matches/current';
 const TEAM1_NAME = 'Team A';
 const TEAM2_NAME = 'Team B';
 
+type MatchJson = {
+  map: string;
+  team1: { name: string; players: string[] };
+  team2: { name: string; players: string[] };
+};
+
+type MatchJsonResult =
+  | { ok: true; match: MatchJson }
+  | { ok: false; reason: 'NOT_FOUND' | 'NOT_READY'; error: string };
+
 type ServerConnectionInfo =
   | {
       ok: true;
@@ -81,6 +91,55 @@ function getServerConnectionInfo(): ServerConnectionInfo {
     connectUrl: `steam://connect/${host}:${port}`,
     spectateUrl: `steam://connect/${host}:${spectatePort}`,
   };
+}
+
+function toPlayerList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id) => typeof id === 'string') : [];
+}
+
+function buildMatchJson(
+  map: unknown,
+  team1: { name?: unknown; players?: unknown },
+  team2: { name?: unknown; players?: unknown }
+): MatchJsonResult {
+  if (!map || typeof map !== 'string') {
+    return { ok: false, reason: 'NOT_READY', error: 'Missing map' };
+  }
+
+  const team1Players = toPlayerList(team1?.players);
+  const team2Players = toPlayerList(team2?.players);
+
+  if (team1Players.length !== 5 || team2Players.length !== 5) {
+    return { ok: false, reason: 'NOT_READY', error: 'Teams must have 5 players each' };
+  }
+
+  return {
+    ok: true,
+    match: {
+      map,
+      team1: {
+        name: typeof team1?.name === 'string' ? team1.name : TEAM1_NAME,
+        players: team1Players,
+      },
+      team2: {
+        name: typeof team2?.name === 'string' ? team2.name : TEAM2_NAME,
+        players: team2Players,
+      },
+    },
+  };
+}
+
+async function getCurrentMatchJson(): Promise<MatchJsonResult> {
+  const db = admin.firestore();
+  const ref = db.doc(MATCH_DOC_PATH);
+  const snap = await ref.get();
+
+  if (!snap.exists) {
+    return { ok: false, reason: 'NOT_FOUND', error: 'Match not found' };
+  }
+
+  const cur = snap.data() as any;
+  return buildMatchJson(cur?.map, cur?.team1 ?? {}, cur?.team2 ?? {});
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -322,14 +381,17 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
       return { ok: false, reason: 'NOT_READY' };
     }
 
-    const matchJson = {
-      map,
-      team1: { name: cur?.team1?.name ?? TEAM1_NAME, players: t1 },
-      team2: { name: cur?.team2?.name ?? TEAM2_NAME, players: t2 },
-    };
+    const matchJsonResult = buildMatchJson(map, cur?.team1 ?? {}, cur?.team2 ?? {});
+    if (!matchJsonResult.ok) {
+      await ref.update({
+        startInProgress: false,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return { ok: false, reason: 'NOT_READY' };
+    }
 
-    const signedUrl = await uploadMatchJsonAndSign(matchJson);
-    const cmd = `matchzy_loadmatch_url ${signedUrl}`;
+    const signedUrl = await uploadMatchJsonAndSign(matchJsonResult.match);
+    const cmd = `matchzy_loadmatch_url "${signedUrl}"`;
     await pteroSendCommand(cmd);
 
     await ref.update({
@@ -637,21 +699,11 @@ export const api = onRequest(
         const team1 = payload?.team1 ?? {};
         const team2 = payload?.team2 ?? {};
 
-        if (!map || typeof map !== 'string') {
-          res.status(400).send('Missing map');
+        const matchJsonResult = buildMatchJson(map, team1, team2);
+        if (!matchJsonResult.ok) {
+          res.status(400).send(matchJsonResult.error);
           return;
         }
-
-        const team1Players: string[] = Array.isArray(team1.players) ? team1.players : [];
-        const team2Players: string[] = Array.isArray(team2.players) ? team2.players : [];
-
-        if (team1Players.length !== 5 || team2Players.length !== 5) {
-          res.status(400).send('Teams must have 5 players each');
-          return;
-        }
-
-        const team1Name = typeof team1.name === 'string' ? team1.name : TEAM1_NAME;
-        const team2Name = typeof team2.name === 'string' ? team2.name : TEAM2_NAME;
 
         const db = admin.firestore();
         const ref = db.doc(MATCH_DOC_PATH);
@@ -659,9 +711,9 @@ export const api = onRequest(
         await ref.set(
           {
             estado: 'seleccionando_mapa',
-            map,
-            team1: { name: team1Name, players: team1Players },
-            team2: { name: team2Name, players: team2Players },
+            map: matchJsonResult.match.map,
+            team1: matchJsonResult.match.team1,
+            team2: matchJsonResult.match.team2,
             queue: [],
             unassigned: [],
             turn: 'team1',
@@ -677,26 +729,65 @@ export const api = onRequest(
         const connection = getServerConnectionInfo();
 
         if (startResult.ok) {
+          res.status(200).json({
+            ok: true,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
           res.status(200).json({ ok: true, startResult, connection });
           return;
         }
 
         if (startResult.reason === 'NOT_READY') {
+          res.status(409).json({
+            ok: false,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
           res.status(409).json({ ok: false, startResult, connection });
           return;
         }
 
         if (startResult.reason === 'LOCKED') {
+          res.status(423).json({
+            ok: false,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
           res.status(423).json({ ok: false, startResult, connection });
           return;
         }
 
         if (startResult.reason === 'NOT_FOUND') {
+          res.status(404).json({
+            ok: false,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
           res.status(404).json({ ok: false, startResult, connection });
           return;
         }
 
         if (startResult.reason === 'UNAUTHENTICATED') {
+          res.status(502).json({
+            ok: false,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
+          return;
+        }
+
+        res.status(502).json({
+          ok: false,
+          startResult,
+          connection,
+          match: matchJsonResult.match,
+        });
           res.status(502).json({ ok: false, startResult, connection });
           return;
         }
@@ -707,6 +798,25 @@ export const api = onRequest(
         res.status(400).send(`Invalid JSON body: ${e?.message ?? String(e)}`);
         return;
       }
+    }
+
+    // ======================
+    // MATCH JSON (current): /api/match/json
+    // ======================
+    if (path === 'match/json') {
+      const matchResult = await getCurrentMatchJson();
+      if (!matchResult.ok) {
+        if (matchResult.reason === 'NOT_FOUND') {
+          res.status(404).json(matchResult);
+          return;
+        }
+
+        res.status(409).json(matchResult);
+        return;
+      }
+
+      res.status(200).json(matchResult.match);
+      return;
     }
 
     // ======================
