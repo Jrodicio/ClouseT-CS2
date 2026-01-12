@@ -432,7 +432,11 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
 // AUTO START MATCH (trigger) — usa startMatchIfReady()
 // =====================================================
 export const autoStartMatch = onDocumentWritten(
-  { document: MATCH_DOC_PATH, region: 'us-central1' },
+  {
+    document: MATCH_DOC_PATH,
+    region: 'us-central1',
+    secrets: [PTERO_CLIENT_KEY, PTERO_SERVER_ID, PTERO_PANEL_ORIGIN, PUBLIC_BASE_URL],
+  },
   async (event) => {
     const before = event.data?.before;
     const after = event.data?.after;
@@ -484,6 +488,7 @@ export const api = onRequest(
       GAME_SERVER_HOST,
       GAME_SERVER_PORT,
       GAME_SERVER_SPECTATE_PORT,
+      PUBLIC_BASE_URL,
     ],
     region: 'us-central1',
   },
