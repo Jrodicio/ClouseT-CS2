@@ -26,6 +26,10 @@ export type MatchDoc = {
   team2: { name: string; players: string[] };
 
   queue: string[];
+  mapPool?: string[];
+  bannedMaps?: string[];
+  mapTurn?: 'team1' | 'team2';
+  mapBanIndex?: number;
 
   // campos “extra” que ya estás usando en functions
   unassigned?: string[];
@@ -43,6 +47,10 @@ function initialMatch(): MatchDoc {
     team1: { name: 'Team A', players: [] },
     team2: { name: 'Team B', players: [] },
     queue: [],
+    mapPool: [],
+    bannedMaps: [],
+    mapTurn: 'team1',
+    mapBanIndex: 0,
     updatedAt: serverTimestamp(),
   };
 }
@@ -228,6 +236,10 @@ export class MatchService {
         update.estado = 'seleccionando_mapa';
         update.queue = []; // ya no se usa queue en esta fase
         update.unassigned = [];
+        update.mapTurn = 'team1';
+        update.mapBanIndex = 0;
+        update.bannedMaps = [];
+        update.mapPool = Array.isArray(match.mapPool) ? [...match.mapPool] : [];
       }
 
       tx.update(this.matchRef, update);
