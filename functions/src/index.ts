@@ -313,6 +313,7 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
 export const autoStartMatch = onDocumentWritten(
   { document: MATCH_DOC_PATH, region: 'us-central1' },
   async (event) => {
+    const before = event.data?.before;
     const after = event.data?.after;
     if (!after?.exists) return;
 
@@ -327,6 +328,20 @@ export const autoStartMatch = onDocumentWritten(
       match?.estado === 'seleccionando_mapa' && t1.length === 5 && t2.length === 5 && !!map;
 
     if (!ready) return;
+
+    if (before?.exists) {
+      const prev = before.data() as any;
+      const prevT1: string[] = prev?.team1?.players ?? [];
+      const prevT2: string[] = prev?.team2?.players ?? [];
+      const prevMap: string | null = prev?.map ?? null;
+      const prevReady =
+        prev?.estado === 'seleccionando_mapa' &&
+        prevT1.length === 5 &&
+        prevT2.length === 5 &&
+        !!prevMap;
+
+      if (prevReady) return;
+    }
 
     await startMatchIfReady();
   }
