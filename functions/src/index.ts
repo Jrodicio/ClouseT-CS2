@@ -1,0 +1,545 @@
+import { setGlobalOptions } from 'firebase-functions/v2';
+import { onRequest } from 'firebase-functions/v2/https';
+import * as logger from 'firebase-functions/logger';
+import * as admin from 'firebase-admin';
+import { defineSecret } from 'firebase-functions/params';
+import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { onTaskDispatched } from 'firebase-functions/v2/tasks';
+import { Timestamp } from 'firebase-admin/firestore';
+import { getFunctions } from 'firebase-admin/functions';
+import * as crypto from 'crypto';
+
+setGlobalOptions({ maxInstances: 15, region: 'us-central1' });
+
+admin.initializeApp();
+
+// ====== Secrets ======
+const STEAM_API_KEY = defineSecret('STEAM_API_KEY');
+
+// Pterodactyl (Client API)
+const PTERO_CLIENT_KEY = defineSecret('PTERO_CLIENT_KEY');
+const PTERO_SERVER_ID = defineSecret('PTERO_SERVER_ID');
+const PTERO_PANEL_ORIGIN = defineSecret('PTERO_PANEL_ORIGIN');
+
+// ====== Steam OpenID ======
+const STEAM_OPENID_ENDPOINT = 'https://steamcommunity.com/openid/login';
+
+// Helper: arma base URL (funciona en prod detrás de Hosting)
+function getBaseUrl(req: any) {
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'http';
+  const host = req.get('x-forwarded-host') || req.get('host');
+  return `${proto}://${host}`;
+}
+
+// Helper: extrae steamId desde claimed_id
+function extractSteamId(claimedId: string | undefined | null): string | null {
+  if (!claimedId) return null;
+  const m = claimedId.match(/https?:\/\/steamcommunity\.com\/openid\/id\/(\d+)/);
+  return m?.[1] ?? null;
+}
+
+// ====== Match constants ======
+const MATCH_DOC_PATH = 'matches/current';
+const TEAM1_NAME = 'Team A';
+const TEAM2_NAME = 'Team B';
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const r = crypto.randomInt(0, i + 1);
+    [a[i], a[r]] = [a[r], a[i]];
+  }
+  return a;
+}
+
+function nowPlusSeconds(sec: number) {
+  return Timestamp.fromMillis(Date.now() + sec * 1000);
+}
+
+// Queue para tareas (Cloud Tasks managed por Firebase)
+const leaderQueue = getFunctions().taskQueue('leader-selection');
+
+// ====== Task: Selección de líderes ======
+export const selectLeadersTask = onTaskDispatched(
+  { region: 'us-central1', retryConfig: { maxAttempts: 3 } },
+  async () => {
+    const db = admin.firestore();
+    const ref = db.doc(MATCH_DOC_PATH);
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return;
+
+      const match = snap.data() as any;
+
+      // Guardas / idempotencia
+      if (match.estado !== 'seleccionando_lideres') return;
+      const queue: string[] = Array.isArray(match.queue) ? match.queue : [];
+      if (queue.length !== 10) return;
+
+      const team1Players: string[] = match?.team1?.players ?? [];
+      const team2Players: string[] = match?.team2?.players ?? [];
+
+      // Si ya hay líderes, no hacemos nada
+      if (team1Players.length > 0 || team2Players.length > 0) return;
+
+      const shuffled = shuffle(queue);
+      const leaderA = shuffled[0];
+      const leaderB = shuffled[1];
+
+      const unassigned = queue.filter((id) => id !== leaderA && id !== leaderB);
+
+      tx.update(ref, {
+        estado: 'armando_equipos',
+        team1: { name: TEAM1_NAME, players: [leaderA] },
+        team2: { name: TEAM2_NAME, players: [leaderB] },
+        unassigned,
+        turn: 'team1', // arranca Team A
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+  }
+);
+
+// ====== Orchestrator: cuando hay 10 en cola -> seleccionando_lideres + agenda task ======
+export const matchOrchestrator = onDocumentWritten(
+  { document: MATCH_DOC_PATH, region: 'us-central1' },
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return;
+
+    const match = after.data() as any;
+
+    if (match.estado !== 'esperando_jugadores') return;
+
+    const queue: string[] = Array.isArray(match.queue) ? match.queue : [];
+    if (queue.length !== 10) return;
+
+    const db = admin.firestore();
+    const ref = db.doc(MATCH_DOC_PATH);
+
+    const deadlineAt = nowPlusSeconds(10);
+
+    const changed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return false;
+
+      const cur = snap.data() as any;
+      if (cur.estado !== 'esperando_jugadores') return false;
+
+      const curQueue: string[] = Array.isArray(cur.queue) ? cur.queue : [];
+      if (curQueue.length !== 10) return false;
+
+      tx.update(ref, {
+        estado: 'seleccionando_lideres',
+        phaseDeadlineAt: deadlineAt,
+        team1: { name: TEAM1_NAME, players: [] },
+        team2: { name: TEAM2_NAME, players: [] },
+        unassigned: [],
+        turn: 'team1',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return true;
+    });
+
+    if (changed) {
+      await leaderQueue.enqueue(
+        { match: 'current' },
+        { scheduleTime: deadlineAt.toDate() }
+      );
+    }
+  }
+);
+
+// ====== Util: ejecutar comando en Pterodactyl (Client API) ======
+async function pteroSendCommand(command: string): Promise<void> {
+  const panelOrigin = PTERO_PANEL_ORIGIN.value(); // ej https://pterodactyl.histeriaservers.com.ar
+  const serverId = PTERO_SERVER_ID.value(); // ej ba39664e
+  const apiKey = PTERO_CLIENT_KEY.value(); // ptlc_...
+
+  if (!panelOrigin || !serverId || !apiKey) {
+    throw new Error(
+      'Missing Pterodactyl secrets (PTERO_PANEL_ORIGIN / PTERO_SERVER_ID / PTERO_CLIENT_KEY)'
+    );
+  }
+
+  const url = `${panelOrigin.replace(/\/+$/, '')}/api/client/servers/${encodeURIComponent(
+    serverId
+  )}/command`;
+
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ command }),
+  });
+
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`Pterodactyl command failed: HTTP ${r.status} ${t}`.trim());
+  }
+}
+
+// ====== Util: subir match.json y devolver URL firmada (temporal) ======
+async function uploadMatchJsonAndSign(matchJson: any): Promise<string> {
+  const bucket = admin.storage().bucket(); // bucket default del proyecto
+  const path = `matchzy/current.json`;
+
+  const file = bucket.file(path);
+  const content = JSON.stringify(matchJson, null, 2);
+
+  await file.save(content, {
+    contentType: 'application/json',
+    metadata: { cacheControl: 'no-store' },
+  });
+
+  const expires = Date.now() + 5 * 60 * 1000; // 5 min
+  const [signedUrl] = await file.getSignedUrl({ action: 'read', expires });
+  return signedUrl;
+}
+
+// =====================================================
+// Start match (shared) — NUEVO ✅
+//  - lock (startInProgress)
+//  - genera json + signed url
+//  - ejecuta matchzy_loadmatch_url
+//  - actualiza estado a en_curso
+// =====================================================
+type StartMatchResult =
+  | { ok: true; command: string; signedUrl: string }
+  | { ok: false; reason: 'NOT_READY' | 'LOCKED' | 'NOT_FOUND' }
+  | { ok: false; reason: 'FAILED'; error: string };
+
+async function startMatchIfReady(): Promise<StartMatchResult> {
+  const db = admin.firestore();
+  const ref = db.doc(MATCH_DOC_PATH);
+
+  // 1) lock en tx
+  const claimed = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return { ok: false as const, reason: 'NOT_FOUND' as const };
+
+    const cur = snap.data() as any;
+
+    if (cur.estado === 'en_curso') return { ok: false as const, reason: 'LOCKED' as const };
+    if (cur.startInProgress === true) return { ok: false as const, reason: 'LOCKED' as const };
+
+    const t1: string[] = cur?.team1?.players ?? [];
+    const t2: string[] = cur?.team2?.players ?? [];
+    const map: string | null = cur?.map ?? null;
+
+    const ready =
+      cur?.estado === 'seleccionando_mapa' && t1.length === 5 && t2.length === 5 && !!map;
+
+    if (!ready) return { ok: false as const, reason: 'NOT_READY' as const };
+
+    tx.update(ref, {
+      startInProgress: true,
+      startRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      startError: admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true as const };
+  });
+
+  if ('ok' in claimed && claimed.ok !== true) return claimed;
+
+  // 2) ejecutar side-effects fuera de tx
+  try {
+    const snap = await ref.get();
+    if (!snap.exists) return { ok: false, reason: 'NOT_FOUND' };
+
+    const cur = snap.data() as any;
+    const t1: string[] = cur?.team1?.players ?? [];
+    const t2: string[] = cur?.team2?.players ?? [];
+    const map: string | null = cur?.map ?? null;
+
+    const stillReady =
+      cur?.estado === 'seleccionando_mapa' && t1.length === 5 && t2.length === 5 && !!map;
+
+    if (!stillReady) {
+      await ref.update({
+        startInProgress: false,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return { ok: false, reason: 'NOT_READY' };
+    }
+
+    const matchJson = {
+      map,
+      team1: { name: cur?.team1?.name ?? TEAM1_NAME, players: t1 },
+      team2: { name: cur?.team2?.name ?? TEAM2_NAME, players: t2 },
+    };
+
+    const signedUrl = await uploadMatchJsonAndSign(matchJson);
+    const cmd = `matchzy_loadmatch_url ${signedUrl}`;
+    await pteroSendCommand(cmd);
+
+    await ref.update({
+      estado: 'en_curso',
+      startInProgress: false,
+      matchConfigUrl: signedUrl,
+      startedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true, command: cmd, signedUrl };
+  } catch (err: any) {
+    const msg = err?.message ?? String(err);
+    logger.error(`startMatchIfReady failed: ${msg}`);
+
+    await ref.update({
+      startInProgress: false,
+      startError: msg,
+      startFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { ok: false, reason: 'FAILED', error: msg };
+  }
+}
+
+// =====================================================
+// AUTO START MATCH (trigger) — usa startMatchIfReady()
+// =====================================================
+export const autoStartMatch = onDocumentWritten(
+  { document: MATCH_DOC_PATH, region: 'us-central1' },
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return;
+
+    const match = after.data() as any;
+
+    // quick check (barato) para no invocar siempre
+    const t1: string[] = match?.team1?.players ?? [];
+    const t2: string[] = match?.team2?.players ?? [];
+    const map: string | null = match?.map ?? null;
+
+    const ready =
+      match?.estado === 'seleccionando_mapa' && t1.length === 5 && t2.length === 5 && !!map;
+
+    if (!ready) return;
+
+    await startMatchIfReady();
+  }
+);
+
+export const helloWorld = onRequest((request, response) => {
+  logger.info('Hello logs!', { structuredData: true });
+  response.send('Hello from Firebase!');
+});
+
+// ====== API principal ======
+export const api = onRequest(
+  {
+    secrets: [STEAM_API_KEY, PTERO_CLIENT_KEY, PTERO_SERVER_ID, PTERO_PANEL_ORIGIN],
+    region: 'us-central1',
+  },
+  async (req, res): Promise<void> => {
+    const baseUrl = getBaseUrl(req);
+
+    const rawPath = req.path || '/';
+    const path = rawPath.replace(/^\/+/, '').replace(/^api\/+/, '');
+
+    // ======================
+    // Steam OpenID start
+    // ======================
+    if (path === 'auth/steam/start') {
+      const redirect = (req.query.redirect as string | undefined) || '';
+
+      const returnToUrl = new URL(`${baseUrl}/api/auth/steam/callback`);
+      if (redirect) returnToUrl.searchParams.set('redirect', redirect);
+
+      const realm = baseUrl + '/';
+
+      const steamUrl = new URL(STEAM_OPENID_ENDPOINT);
+      steamUrl.searchParams.set('openid.ns', 'http://specs.openid.net/auth/2.0');
+      steamUrl.searchParams.set('openid.mode', 'checkid_setup');
+      steamUrl.searchParams.set('openid.return_to', returnToUrl.toString());
+      steamUrl.searchParams.set('openid.realm', realm);
+      steamUrl.searchParams.set(
+        'openid.identity',
+        'http://specs.openid.net/auth/2.0/identifier_select'
+      );
+      steamUrl.searchParams.set(
+        'openid.claimed_id',
+        'http://specs.openid.net/auth/2.0/identifier_select'
+      );
+
+      res.redirect(302, steamUrl.toString());
+      return;
+    }
+
+    // ======================
+    // Steam OpenID callback
+    // ======================
+    if (path === 'auth/steam/callback') {
+      try {
+        const mode = req.query['openid.mode'] as string | undefined;
+        if (!mode) {
+          res.status(400).send('Missing openid.mode');
+          return;
+        }
+
+        if (mode === 'cancel') {
+          const redirect = (req.query.redirect as string | undefined) || '';
+          if (redirect) {
+            res.redirect(302, `${redirect}?error=${encodeURIComponent('steam_cancelled')}`);
+            return;
+          }
+          res.status(401).send('Steam login cancelled');
+          return;
+        }
+
+        const params = new URLSearchParams();
+        for (const [k, v] of Object.entries(req.query)) {
+          if (Array.isArray(v)) {
+            for (const vv of v) params.append(k, String(vv));
+          } else if (v != null) {
+            params.append(k, String(v));
+          }
+        }
+        params.set('openid.mode', 'check_authentication');
+
+        const verifyResp = await fetch(STEAM_OPENID_ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: params.toString(),
+        });
+
+        const text = await verifyResp.text();
+        const isValid = text.includes('is_valid:true');
+        if (!isValid) {
+          const redirect = (req.query.redirect as string | undefined) || '';
+          if (redirect) {
+            res.redirect(302, `${redirect}?error=${encodeURIComponent('steam_invalid')}`);
+            return;
+          }
+          res.status(401).send('Invalid Steam OpenID response');
+          return;
+        }
+
+        const claimedId = req.query['openid.claimed_id'] as string | undefined;
+        const steamId = extractSteamId(claimedId);
+        if (!steamId) {
+          const redirect = (req.query.redirect as string | undefined) || '';
+          if (redirect) {
+            res.redirect(302, `${redirect}?error=${encodeURIComponent('steam_no_id')}`);
+            return;
+          }
+          res.status(400).send('Could not extract SteamID');
+          return;
+        }
+
+        const uid = `steam:${steamId}`;
+        const customToken = await admin.auth().createCustomToken(uid, { steamId });
+
+        const redirect = (req.query.redirect as string | undefined) || '';
+        if (!redirect) {
+          res.status(200).send(customToken);
+          return;
+        }
+
+        const url = new URL(redirect);
+        url.searchParams.set('token', customToken);
+        res.redirect(302, url.toString());
+        return;
+      } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        const stack = err?.stack ? String(err.stack) : '';
+
+        logger.error(`Steam callback error: ${msg}`);
+        if (stack) logger.error(stack);
+
+        const redirect = (req.query.redirect as string | undefined) || '';
+        const detail = encodeURIComponent(msg);
+
+        if (redirect) {
+          res.redirect(
+            302,
+            `${redirect}?error=${encodeURIComponent('steam_exception')}&detail=${detail}`
+          );
+          return;
+        }
+
+        res.status(500).send(`Steam callback exception: ${msg}`);
+        return;
+      }
+    }
+
+    // ======================
+    // Steam profile: /api/steam/me?steamId=...
+    // ======================
+    if (path === 'steam/me') {
+      try {
+        const steamId = (req.query.steamId as string | undefined) || '';
+        if (!steamId) {
+          res.status(400).send('Missing steamId');
+          return;
+        }
+
+        const apiKey = STEAM_API_KEY.value();
+        if (!apiKey) {
+          res.status(500).send('Missing STEAM_API_KEY secret');
+          return;
+        }
+
+        const url =
+          `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${encodeURIComponent(
+            apiKey
+          )}&steamids=${encodeURIComponent(steamId)}`;
+
+        const r = await fetch(url);
+        if (!r.ok) {
+          res.status(502).send(`Steam API error: ${r.status}`);
+          return;
+        }
+
+        const data = await r.json();
+        const player = data?.response?.players?.[0];
+        if (!player) {
+          res.status(404).send('Player not found');
+          return;
+        }
+
+        res.status(200).json({
+          steamId: player.steamid,
+          personaName: player.personaname,
+          avatar: player.avatarfull || player.avatarmedium || player.avatar,
+          profileUrl: player.profileurl,
+        });
+        return;
+      } catch (e: any) {
+        logger.error(`steam/me error: ${e?.message ?? String(e)}`);
+        res.status(500).send('steam/me exception');
+        return;
+      }
+    }
+
+    // ======================
+    // START MATCH (manual/debug): /api/match/start
+    // ======================
+    if (path === 'match/start') {
+      const r = await startMatchIfReady();
+      if (r.ok) {
+        res.status(200).json(r);
+      } else if (r.reason === 'NOT_READY') {
+        res.status(409).json(r);
+      } else if (r.reason === 'LOCKED') {
+        res.status(423).json(r);
+      } else if (r.reason === 'NOT_FOUND') {
+        res.status(404).json(r);
+      } else {
+        res.status(500).json(r);
+      }
+      return;
+    }
+
+    res.status(404).send('Not found');
+  }
+);

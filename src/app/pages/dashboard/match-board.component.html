@@ -1,0 +1,212 @@
+<div class="board">
+  <!-- Header -->
+  <div class="board__header">
+    <div class="state">
+      <span>Estado:</span>
+      <b>{{ match.estado }}</b>
+    </div>
+
+    <div class="meta">
+      <span>Queue: <b>{{ queue.length }}/10</b></span>
+      @if (match.map) {
+        <span>Mapa: <b>{{ match.map }}</b></span>
+      }
+      @if (match.estado === 'armando_equipos') {
+        <span>Turno: <b>{{ turn === 'team1' ? (match.team1?.name ?? 'Team A') : (match.team2?.name ?? 'Team B') }}</b></span>
+      }
+    </div>
+  </div>
+
+  @if (!showDetails) {
+    <div class="board__locked">
+      Estás fuera. Activá <b>Ver match</b> para ver el detalle.
+    </div>
+  } @else {
+    <!-- Main 3 columns -->
+    <div class="board__grid">
+      <!-- LEFT: Team A -->
+      <section class="col">
+        <div class="col__title">{{ match.team1?.name ?? 'Team A' }}</div>
+
+        <div class="stack">
+          @for (id of teamA; track id) {
+            <div
+              class="player"
+              [class.leader]="isLeaderA(id)"
+              [attr.title]="titleFor(id)"
+            >
+              @if (profileOf(id); as p) {
+                <img
+                  class="avatar"
+                  [class.leaderAvatar]="isLeaderA(id)"
+                  [src]="p.avatar"
+                  alt="avatar"
+                />
+                <div class="name">{{ p.personaName }}</div>
+              } @else {
+                <div class="name">{{ id }}</div>
+              }
+            </div>
+          }
+
+          @if (teamA.length === 0) {
+            <div class="hint">Vacío</div>
+          }
+        </div>
+      </section>
+
+      <!-- CENTER: varies by estado -->
+      <section class="center">
+        @switch (match.estado) {
+          @case ('esperando_jugadores') {
+            <div class="center__title">Jugadores en cola</div>
+
+            <div class="centerGrid">
+              @for (id of queue; track id) {
+                <div class="tile" [attr.title]="titleFor(id)">
+                  @if (profileOf(id); as p) {
+                    <img class="avatar" [src]="p.avatar" alt="avatar" />
+                    <div class="name tiny">{{ p.personaName }}</div>
+                  } @else {
+                    <div class="name tiny">{{ id }}</div>
+                  }
+                </div>
+              }
+
+              @if (queue.length === 0) {
+                <div class="hint">No hay nadie todavía</div>
+              }
+            </div>
+          }
+
+          @case ('seleccionando_lideres') {
+            <div class="center__title">Seleccionando líderes…</div>
+            <div class="hint">En unos segundos se asignan 2 líderes y pasan a los equipos.</div>
+
+            <div class="centerGrid">
+              @for (id of queue; track id) {
+                <div class="tile" [attr.title]="titleFor(id)">
+                  @if (profileOf(id); as p) {
+                    <img class="avatar" [src]="p.avatar" alt="avatar" />
+                    <div class="name tiny">{{ p.personaName }}</div>
+                  } @else {
+                    <div class="name tiny">{{ id }}</div>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          @case ('armando_equipos') {
+            <div class="center__title">Jugadores disponibles</div>
+
+            @if (canPick) {
+              <div class="hint">Es tu turno. Elegí un jugador y apretá Pickear.</div>
+            } @else {
+              <div class="hint">Solo el líder del turno puede pickear.</div>
+            }
+
+            <div class="centerGrid">
+              @for (id of availableIds; track id) {
+                <div
+                  class="tile selectable"
+                  [class.selected]="selectedId === id"
+                  [attr.title]="titleFor(id)"
+                  (click)="onSelect(id)"
+                >
+                  @if (profileOf(id); as p) {
+                    <img class="avatar" [src]="p.avatar" alt="avatar" />
+                    <div class="name tiny">{{ p.personaName }}</div>
+                  } @else {
+                    <div class="name tiny">{{ id }}</div>
+                  }
+                </div>
+              }
+
+              @if (availableIds.length === 0) {
+                <div class="hint">No hay disponibles</div>
+              }
+            </div>
+
+            @if (pickErr) {
+              <div class="err">
+                {{ pickErr }}
+              </div>
+            }
+
+            <div style="margin-top:12px;display:flex;gap:10px;">
+              <button
+                class="btn primary"
+                type="button"
+                [disabled]="!canPick || !selectedId || busyPick"
+                (click)="onPick()"
+                style="width:100%;"
+              >
+                {{ busyPick ? 'Pickeando…' : 'Pickear' }}
+              </button>
+            </div>
+          }
+
+          @case ('seleccionando_mapa') {
+            <div class="center__title">Baneo de mapas</div>
+            <div class="hint">Acá listamos 7 mapas. (Bans vienen después)</div>
+
+            <div class="mapList">
+              @for (m of ['de_inferno','de_mirage','de_nuke','de_overpass','de_ancient','de_vertigo','de_anubis']; track m) {
+                <div class="mapRow">
+                  <div class="mapThumb"></div>
+                  <div class="mapName">{{ m }}</div>
+                  <button class="btn" type="button">Ban</button>
+                </div>
+              }
+            </div>
+          }
+
+          @case ('en_curso') {
+            <div class="center__title">Match en curso</div>
+
+            <div class="mapCard">
+              <div class="mapThumb big"></div>
+              <div class="mapName big">{{ match.map ?? 'Mapa no definido' }}</div>
+
+              <button class="btn primary" type="button">
+                Acceder a partida
+              </button>
+            </div>
+          }
+        }
+      </section>
+
+      <!-- RIGHT: Team B -->
+      <section class="col">
+        <div class="col__title">{{ match.team2?.name ?? 'Team B' }}</div>
+
+        <div class="stack">
+          @for (id of teamB; track id) {
+            <div
+              class="player"
+              [class.leader]="isLeaderB(id)"
+              [attr.title]="titleFor(id)"
+            >
+              @if (profileOf(id); as p) {
+                <img
+                  class="avatar"
+                  [class.leaderAvatar]="isLeaderB(id)"
+                  [src]="p.avatar"
+                  alt="avatar"
+                />
+                <div class="name">{{ p.personaName }}</div>
+              } @else {
+                <div class="name">{{ id }}</div>
+              }
+            </div>
+          }
+
+          @if (teamB.length === 0) {
+            <div class="hint">Vacío</div>
+          }
+        </div>
+      </section>
+    </div>
+  }
+</div>
