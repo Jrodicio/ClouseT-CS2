@@ -811,6 +811,26 @@ export const api = onRequest(
     }
 
     // ======================
+    // MATCH JSON file (current): /api/match/config
+    // ======================
+    if (path === 'match/config') {
+      const matchResult = await getCurrentMatchJson();
+      if (!matchResult.ok) {
+        if (matchResult.reason === 'NOT_FOUND') {
+          res.status(404).json(matchResult);
+          return;
+        }
+
+        res.status(409).json(matchResult);
+        return;
+      }
+
+      res.set('cache-control', 'no-store');
+      res.type('application/json').status(200).send(JSON.stringify(matchResult.match, null, 2));
+      return;
+    }
+
+    // ======================
     // START MATCH (manual/debug): /api/match/start
     // ======================
     if (path === 'match/start') {
