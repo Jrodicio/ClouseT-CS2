@@ -567,6 +567,65 @@ export const api = onRequest(
     }
 
     // ======================
+    // LOAD MATCH (manual/debug): /api/match/load
+    // ======================
+    if (path === 'match/load') {
+      try {
+        const payload =
+          typeof req.body === 'string'
+            ? JSON.parse(req.body || '{}')
+            : (req.body ?? {});
+
+        const map = payload?.map;
+        const team1 = payload?.team1 ?? {};
+        const team2 = payload?.team2 ?? {};
+
+        if (!map || typeof map !== 'string') {
+          res.status(400).send('Missing map');
+          return;
+        }
+
+        const team1Players: string[] = Array.isArray(team1.players) ? team1.players : [];
+        const team2Players: string[] = Array.isArray(team2.players) ? team2.players : [];
+
+        if (team1Players.length !== 5 || team2Players.length !== 5) {
+          res.status(400).send('Teams must have 5 players each');
+          return;
+        }
+
+        const team1Name = typeof team1.name === 'string' ? team1.name : TEAM1_NAME;
+        const team2Name = typeof team2.name === 'string' ? team2.name : TEAM2_NAME;
+
+        const db = admin.firestore();
+        const ref = db.doc(MATCH_DOC_PATH);
+
+        await ref.set(
+          {
+            estado: 'seleccionando_mapa',
+            map,
+            team1: { name: team1Name, players: team1Players },
+            team2: { name: team2Name, players: team2Players },
+            queue: [],
+            unassigned: [],
+            turn: 'team1',
+            mapTurn: 'team1',
+            mapBanCount: 0,
+            bannedMaps: [],
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: false }
+        );
+
+        const startResult = await startMatchIfReady();
+        res.status(200).json({ ok: true, startResult });
+        return;
+      } catch (e: any) {
+        res.status(400).send(`Invalid JSON body: ${e?.message ?? String(e)}`);
+        return;
+      }
+    }
+
+    // ======================
     // START MATCH (manual/debug): /api/match/start
     // ======================
     if (path === 'match/start') {
