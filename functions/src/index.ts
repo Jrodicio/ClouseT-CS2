@@ -735,7 +735,6 @@ export const api = onRequest(
             connection,
             match: matchJsonResult.match,
           });
-          res.status(200).json({ ok: true, startResult, connection });
           return;
         }
 
@@ -746,7 +745,6 @@ export const api = onRequest(
             connection,
             match: matchJsonResult.match,
           });
-          res.status(409).json({ ok: false, startResult, connection });
           return;
         }
 
@@ -757,7 +755,6 @@ export const api = onRequest(
             connection,
             match: matchJsonResult.match,
           });
-          res.status(423).json({ ok: false, startResult, connection });
           return;
         }
 
@@ -768,7 +765,6 @@ export const api = onRequest(
             connection,
             match: matchJsonResult.match,
           });
-          res.status(404).json({ ok: false, startResult, connection });
           return;
         }
 
@@ -788,11 +784,6 @@ export const api = onRequest(
           connection,
           match: matchJsonResult.match,
         });
-          res.status(502).json({ ok: false, startResult, connection });
-          return;
-        }
-
-        res.status(502).json({ ok: false, startResult, connection });
         return;
       } catch (e: any) {
         res.status(400).send(`Invalid JSON body: ${e?.message ?? String(e)}`);
