@@ -46,6 +46,43 @@ const MATCH_DOC_PATH = 'matches/current';
 const TEAM1_NAME = 'Team A';
 const TEAM2_NAME = 'Team B';
 
+type ServerConnectionInfo =
+  | {
+      ok: true;
+      host: string;
+      port: number;
+      spectatePort: number;
+      connectUrl: string;
+      spectateUrl: string;
+    }
+  | { ok: false; error: string };
+
+function getServerConnectionInfo(): ServerConnectionInfo {
+  const host = GAME_SERVER_HOST.value();
+  const portRaw = GAME_SERVER_PORT.value();
+  const spectatePortRaw = GAME_SERVER_SPECTATE_PORT.value() || portRaw;
+
+  if (!host || !portRaw) {
+    return { ok: false, error: 'Missing GAME_SERVER_HOST or GAME_SERVER_PORT secret' };
+  }
+
+  const port = Number(portRaw);
+  const spectatePort = Number(spectatePortRaw);
+
+  if (!Number.isFinite(port) || port <= 0 || !Number.isFinite(spectatePort) || spectatePort <= 0) {
+    return { ok: false, error: 'Invalid GAME_SERVER_PORT or GAME_SERVER_SPECTATE_PORT secret' };
+  }
+
+  return {
+    ok: true,
+    host,
+    port,
+    spectatePort,
+    connectUrl: `steam://connect/${host}:${port}`,
+    spectateUrl: `steam://connect/${host}:${spectatePort}`,
+  };
+}
+
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -502,33 +539,13 @@ export const api = onRequest(
     // Server connection: /api/server/connection
     // ======================
     if (path === 'server/connection') {
-      const host = GAME_SERVER_HOST.value();
-      const portRaw = GAME_SERVER_PORT.value();
-      const spectatePortRaw = GAME_SERVER_SPECTATE_PORT.value() || portRaw;
-
-      if (!host || !portRaw) {
-        res.status(500).send('Missing GAME_SERVER_HOST or GAME_SERVER_PORT secret');
+      const connection = getServerConnectionInfo();
+      if (!connection.ok) {
+        res.status(500).send(connection.error);
         return;
       }
 
-      const port = Number(portRaw);
-      const spectatePort = Number(spectatePortRaw);
-
-      if (!Number.isFinite(port) || port <= 0 || !Number.isFinite(spectatePort) || spectatePort <= 0) {
-        res.status(500).send('Invalid GAME_SERVER_PORT or GAME_SERVER_SPECTATE_PORT secret');
-        return;
-      }
-
-      const connectUrl = `steam://connect/${host}:${port}`;
-      const spectateUrl = `steam://connect/${host}:${spectatePort}`;
-
-      res.status(200).json({
-        host,
-        port,
-        spectatePort,
-        connectUrl,
-        spectateUrl,
-      });
+      res.status(200).json(connection);
       return;
     }
 
@@ -632,7 +649,29 @@ export const api = onRequest(
         );
 
         const startResult = await startMatchIfReady();
-        res.status(200).json({ ok: true, startResult });
+        const connection = getServerConnectionInfo();
+
+        if (startResult.ok) {
+          res.status(200).json({ ok: true, startResult, connection });
+          return;
+        }
+
+        if (startResult.reason === 'NOT_READY') {
+          res.status(409).json({ ok: false, startResult, connection });
+          return;
+        }
+
+        if (startResult.reason === 'LOCKED') {
+          res.status(423).json({ ok: false, startResult, connection });
+          return;
+        }
+
+        if (startResult.reason === 'NOT_FOUND') {
+          res.status(404).json({ ok: false, startResult, connection });
+          return;
+        }
+
+        res.status(502).json({ ok: false, startResult, connection });
         return;
       } catch (e: any) {
         res.status(400).send(`Invalid JSON body: ${e?.message ?? String(e)}`);
