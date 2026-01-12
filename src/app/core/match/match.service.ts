@@ -39,6 +39,7 @@ export type MatchDoc = {
   // campos “extra” que ya estás usando en functions
   unassigned?: string[];
   turn?: 'team1' | 'team2';
+  finalizeBy?: string[];
 
   updatedAt?: any;
 };

@@ -192,10 +192,34 @@
               <div class="mapThumb big"></div>
               <div class="mapName big">{{ match.map ?? 'Mapa no definido' }}</div>
 
-              <button class="btn primary" type="button">
+              <a class="btn primary" href="steam://connect/45.235.98.222:27159">
                 Acceder a partida
-              </button>
+              </a>
             </div>
+
+            @if (canFinalize) {
+              <div class="hint" style="margin-top:12px;">
+                Para reiniciar el match, ambos líderes deben confirmar.
+              </div>
+
+              <button
+                class="btn"
+                type="button"
+                [disabled]="busyFinalize || hasFinalized"
+                (click)="onFinalize()"
+                style="margin-top:8px;width:100%;"
+              >
+                {{ hasFinalized ? 'Confirmado' : (busyFinalize ? 'Finalizando…' : 'Finalizar match') }}
+              </button>
+
+              @if (hasFinalized) {
+                <div class="hint">Esperando confirmación del otro líder…</div>
+              }
+
+              @if (finalizeErr) {
+                <div class="err">{{ finalizeErr }}</div>
+              }
+            }
           }
         }
       </section>

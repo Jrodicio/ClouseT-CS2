@@ -156,7 +156,7 @@
                   </button>
                 } @else {
                   <div style="font-size:13px;opacity:.7;">
-                    Seleccioná jugadores en el panel de la derecha.
+                    Baneá mapas en el panel de la derecha.
                   </div>
                 }
               }
@@ -170,25 +170,26 @@
                   Mapa: <b>{{ match.map ?? '—' }}</b>
                 </div>
 
-                @if (serverConnection) {
+                @if (activeServerConnection; as connection) {
                   @if (myStatus(match, mySteamId) === 'fuera') {
                     <a
-                      [href]="serverConnection.spectateUrl"
+                      [href]="connection.spectateUrl"
                       style="padding:10px 14px;cursor:pointer;width:100%;display:inline-block;text-align:center;text-decoration:none;border:1px solid #ccc;border-radius:6px;"
                     >
                       Espectear
                     </a>
                   } @else {
                     <a
-                      [href]="serverConnection.connectUrl"
+                      [href]="connection.connectUrl"
                       style="padding:10px 14px;cursor:pointer;width:100%;display:inline-block;text-align:center;text-decoration:none;border:1px solid #ccc;border-radius:6px;"
                     >
                       Ingresar a partida
                     </a>
                   }
-                } @else {
-                  <div style="font-size:13px;opacity:.7;">
-                    {{ serverConnectionError || 'Cargando servidor…' }}
+                }
+                @if (serverConnectionError) {
+                  <div style="font-size:12px;opacity:.7;margin-top:8px;">
+                    {{ serverConnectionError }}
                   </div>
                 }
               }

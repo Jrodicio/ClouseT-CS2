@@ -47,6 +47,8 @@ export class MatchBoardComponent {
   pickErr = '';
   busyBan = false;
   banErr = '';
+  busyFinalize = false;
+  finalizeErr = '';
 
   get teamA() {
     return this.match?.team1?.players ?? [];
@@ -80,6 +82,10 @@ export class MatchBoardComponent {
     return this.match?.mapTurn === 'team2' ? 'team2' : 'team1';
   }
 
+  get finalizeBy(): string[] {
+    return Array.isArray(this.match?.finalizeBy) ? this.match.finalizeBy : [];
+  }
+
   isLeaderA(id: string): boolean {
     return !!id && id === this.leaderAId;
   }
@@ -104,6 +110,17 @@ export class MatchBoardComponent {
 
     if (this.mapTurn === 'team1') return this.mySteamId === this.leaderAId;
     return this.mySteamId === this.leaderBId;
+  }
+
+  get canFinalize(): boolean {
+    if (this.match?.estado !== 'en_curso') return false;
+    if (!this.mySteamId) return false;
+    return this.mySteamId === this.leaderAId || this.mySteamId === this.leaderBId;
+  }
+
+  get hasFinalized(): boolean {
+    if (!this.mySteamId) return false;
+    return this.finalizeBy.includes(this.mySteamId);
   }
 
   get bannedMaps(): string[] {
@@ -168,6 +185,21 @@ export class MatchBoardComponent {
       this.pickErr = e?.message ?? String(e);
     } finally {
       this.busyPick = false;
+    }
+  }
+
+  async onFinalize(): Promise<void> {
+    if (!this.canFinalize || this.hasFinalized) return;
+
+    try {
+      this.busyFinalize = true;
+      this.finalizeErr = '';
+
+      await this.matchSvc.requestFinalizeMatch(this.mySteamId!);
+    } catch (e: any) {
+      this.finalizeErr = e?.message ?? String(e);
+    } finally {
+      this.busyFinalize = false;
     }
   }
 }
