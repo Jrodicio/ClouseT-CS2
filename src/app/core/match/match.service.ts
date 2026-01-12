@@ -269,6 +269,15 @@ export class MatchService {
   async banMap(mySteamId: string, mapName: string): Promise<void> {
     if (!mySteamId || !mapName) return;
 
+    const banOrder: Array<'team1' | 'team2'> = [
+      'team1',
+      'team1',
+      'team2',
+      'team2',
+      'team1',
+      'team2',
+    ];
+
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(this.matchRef);
       if (!snap.exists()) throw new Error('Match no existe.');
@@ -288,11 +297,18 @@ export class MatchService {
         throw new Error('No hay líderes definidos.');
       }
 
-      const turn: 'team1' | 'team2' = match.mapTurn === 'team2' ? 'team2' : 'team1';
-      if (turn === 'team1' && mySteamId !== leaderA) {
+      const banned = Array.isArray(match.bannedMaps) ? [...match.bannedMaps] : [];
+      const banIndex = banned.length;
+      const expectedTurn = banOrder[banIndex];
+
+      if (!expectedTurn) {
+        throw new Error('No hay más mapas para banear.');
+      }
+
+      if (expectedTurn === 'team1' && mySteamId !== leaderA) {
         throw new Error('No sos el líder de Team A o no es tu turno.');
       }
-      if (turn === 'team2' && mySteamId !== leaderB) {
+      if (expectedTurn === 'team2' && mySteamId !== leaderB) {
         throw new Error('No sos el líder de Team B o no es tu turno.');
       }
 
@@ -304,7 +320,6 @@ export class MatchService {
         throw new Error('Ese mapa no está en el pool.');
       }
 
-      const banned = Array.isArray(match.bannedMaps) ? [...match.bannedMaps] : [];
       if (banned.includes(mapName)) {
         throw new Error('Ese mapa ya está baneado.');
       }
@@ -316,8 +331,8 @@ export class MatchService {
         throw new Error('No quedan mapas disponibles.');
       }
 
-      const nextTurn: 'team1' | 'team2' = turn === 'team1' ? 'team2' : 'team1';
-      const banCount = (match.mapBanCount ?? banned.length) + 1;
+      const banCount = banIndex + 1;
+      const nextTurn = banOrder[banIndex + 1] ?? null;
 
       const update: any = {
         bannedMaps: nextBanned,

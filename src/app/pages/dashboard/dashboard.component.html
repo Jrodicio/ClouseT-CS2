@@ -176,14 +176,14 @@
                       [href]="connection.spectateUrl"
                       style="padding:10px 14px;cursor:pointer;width:100%;display:inline-block;text-align:center;text-decoration:none;border:1px solid #ccc;border-radius:6px;"
                     >
-                      Espectear
+                      Ingresar como espectador
                     </a>
                   } @else {
                     <a
                       [href]="connection.connectUrl"
                       style="padding:10px 14px;cursor:pointer;width:100%;display:inline-block;text-align:center;text-decoration:none;border:1px solid #ccc;border-radius:6px;"
                     >
-                      Ingresar a partida
+                      Ingresar al servidor
                     </a>
                   }
                 }
@@ -208,6 +208,7 @@
             [leaderA]="match.team1?.players?.[0] ?? null"
             [leaderB]="match.team2?.players?.[0] ?? null"
             [mySteamId]="mySteamId"
+            [connection]="activeServerConnection"
           />
 
 
