@@ -170,14 +170,26 @@
                   Mapa: <b>{{ match.map ?? '—' }}</b>
                 </div>
 
-                @if (myStatus(match, mySteamId) === 'fuera') {
-                  <button style="padding:10px 14px;cursor:pointer;width:100%;">
-                    Espectear
-                  </button>
+                @if (serverConnection) {
+                  @if (myStatus(match, mySteamId) === 'fuera') {
+                    <a
+                      [href]="serverConnection.spectateUrl"
+                      style="padding:10px 14px;cursor:pointer;width:100%;display:inline-block;text-align:center;text-decoration:none;border:1px solid #ccc;border-radius:6px;"
+                    >
+                      Espectear
+                    </a>
+                  } @else {
+                    <a
+                      [href]="serverConnection.connectUrl"
+                      style="padding:10px 14px;cursor:pointer;width:100%;display:inline-block;text-align:center;text-decoration:none;border:1px solid #ccc;border-radius:6px;"
+                    >
+                      Ingresar a partida
+                    </a>
+                  }
                 } @else {
-                  <button style="padding:10px 14px;cursor:pointer;width:100%;">
-                    Ingresar a partida
-                  </button>
+                  <div style="font-size:13px;opacity:.7;">
+                    {{ serverConnectionError || 'Cargando servidor…' }}
+                  </div>
                 }
               }
             }
