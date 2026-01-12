@@ -14,6 +14,14 @@ type SteamMe = {
   profileUrl: string;
 };
 
+type ServerConnection = {
+  host: string;
+  port: number;
+  spectatePort: number;
+  connectUrl: string;
+  spectateUrl: string;
+};
+
 @Component({
   standalone: true,
   selector: 'app-dashboard',
@@ -27,6 +35,8 @@ export class DashboardComponent {
   private destroyRef = inject(DestroyRef);
 
   watchMatch = false;
+  serverConnection: ServerConnection | null = null;
+  serverConnectionError = '';
 
   // Steam cache
   steamMe: SteamMe | null = null;
@@ -67,6 +77,10 @@ export class DashboardComponent {
           .then((p) => (this.steamMe = p))
           .catch(() => {});
       });
+
+    this.loadServerConnection().catch((e) =>
+      console.error('loadServerConnection error', e)
+    );
   }
 
   steamIdFromUid(uid: string): string | null {
@@ -100,6 +114,22 @@ export class DashboardComponent {
       return data;
     } finally {
       this.inflight.delete(steamId);
+    }
+  }
+
+  async loadServerConnection(): Promise<void> {
+    try {
+      const r = await fetch('/api/server/connection');
+      if (!r.ok) {
+        const t = await r.text().catch(() => '');
+        this.serverConnectionError = `No se pudo obtener el servidor (${r.status}) ${t}`.trim();
+        return;
+      }
+
+      this.serverConnection = (await r.json()) as ServerConnection;
+      this.serverConnectionError = '';
+    } catch (err: any) {
+      this.serverConnectionError = err?.message ?? String(err);
     }
   }
 
