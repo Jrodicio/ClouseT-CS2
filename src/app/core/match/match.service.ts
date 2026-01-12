@@ -51,6 +51,14 @@ const DEFAULT_MAP_POOL = [
   'de_anubis',
 ] as const;
 
+const VALID_ESTADOS: MatchEstado[] = [
+  'esperando_jugadores',
+  'seleccionando_lideres',
+  'armando_equipos',
+  'seleccionando_mapa',
+  'en_curso',
+];
+
 function initialMatch(): MatchDoc {
   return {
     estado: 'esperando_jugadores',
@@ -64,6 +72,50 @@ function initialMatch(): MatchDoc {
     mapBanCount: 0,
     updatedAt: serverTimestamp(),
   };
+}
+
+function isValidEstado(estado: unknown): estado is MatchEstado {
+  return typeof estado === 'string' && VALID_ESTADOS.includes(estado as MatchEstado);
+}
+
+function patchMissingFields(match: Partial<MatchDoc>): Partial<MatchDoc> {
+  const patch: Partial<MatchDoc> = {};
+  if (!isValidEstado(match.estado)) {
+    patch.estado = 'esperando_jugadores';
+  }
+  if (match.map === undefined) {
+    patch.map = null;
+  }
+  if (!Array.isArray(match.queue)) {
+    patch.queue = [];
+  }
+  if (!Array.isArray(match.mapPool)) {
+    patch.mapPool = [...DEFAULT_MAP_POOL];
+  }
+  if (!Array.isArray(match.bannedMaps)) {
+    patch.bannedMaps = [];
+  }
+  if (!match.team1 || typeof match.team1 !== 'object') {
+    patch.team1 = { name: 'Team A', players: [] };
+  } else {
+    const team1Patch: Partial<MatchDoc['team1']> = {};
+    if (!match.team1.name) team1Patch.name = 'Team A';
+    if (!Array.isArray(match.team1.players)) team1Patch.players = [];
+    if (Object.keys(team1Patch).length) {
+      patch.team1 = { ...(match.team1 as MatchDoc['team1']), ...team1Patch };
+    }
+  }
+  if (!match.team2 || typeof match.team2 !== 'object') {
+    patch.team2 = { name: 'Team B', players: [] };
+  } else {
+    const team2Patch: Partial<MatchDoc['team2']> = {};
+    if (!match.team2.name) team2Patch.name = 'Team B';
+    if (!Array.isArray(match.team2.players)) team2Patch.players = [];
+    if (Object.keys(team2Patch).length) {
+      patch.team2 = { ...(match.team2 as MatchDoc['team2']), ...team2Patch };
+    }
+  }
+  return patch;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -84,6 +136,12 @@ export class MatchService {
     const snap = await getDoc(this.matchRef);
     if (!snap.exists()) {
       await setDoc(this.matchRef, initialMatch(), { merge: false });
+    } else {
+      const data = snap.data() as Partial<MatchDoc>;
+      const patch = patchMissingFields(data);
+      if (Object.keys(patch).length > 0) {
+        await setDoc(this.matchRef, patch as MatchDoc, { merge: true });
+      }
     }
 
     if (!this.unsub) {
@@ -113,8 +171,9 @@ export class MatchService {
 
       const match = snap.data() as MatchDoc;
 
-      if (match.estado !== 'esperando_jugadores') {
-        throw new Error(`No se puede unirse: estado actual = ${match.estado}`);
+      const estado = isValidEstado(match.estado) ? match.estado : 'esperando_jugadores';
+      if (estado !== 'esperando_jugadores') {
+        throw new Error(`No se puede unirse: estado actual = ${estado}`);
       }
 
       const q = Array.isArray(match.queue) ? [...match.queue] : [];
@@ -126,10 +185,14 @@ export class MatchService {
 
       q.push(steamId);
 
-      tx.update(this.matchRef, {
+      const update: Partial<MatchDoc> = {
         queue: q,
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (!isValidEstado(match.estado)) {
+        update.estado = 'esperando_jugadores';
+      }
+      tx.update(this.matchRef, update);
     });
   }
 
