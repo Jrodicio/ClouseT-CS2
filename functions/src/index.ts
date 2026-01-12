@@ -23,6 +23,7 @@ const PTERO_PANEL_ORIGIN = defineSecret('PTERO_PANEL_ORIGIN');
 const GAME_SERVER_HOST = defineSecret('GAME_SERVER_HOST');
 const GAME_SERVER_PORT = defineSecret('GAME_SERVER_PORT');
 const GAME_SERVER_SPECTATE_PORT = defineSecret('GAME_SERVER_SPECTATE_PORT');
+const PUBLIC_BASE_URL = defineSecret('PUBLIC_BASE_URL');
 
 // ====== Steam OpenID ======
 const STEAM_OPENID_ENDPOINT = 'https://steamcommunity.com/openid/login';
@@ -32,6 +33,20 @@ function getBaseUrl(req: any) {
   const proto = req.get('x-forwarded-proto') || req.protocol || 'http';
   const host = req.get('x-forwarded-host') || req.get('host');
   return `${proto}://${host}`;
+}
+
+function getPublicBaseUrl(): string {
+  const explicitBaseUrl = PUBLIC_BASE_URL.value();
+  if (explicitBaseUrl) {
+    return explicitBaseUrl.replace(/\/+$/, '');
+  }
+
+  const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT;
+  if (!projectId) {
+    throw new Error('Missing PUBLIC_BASE_URL secret or project id');
+  }
+
+  return `https://${projectId}.web.app`;
 }
 
 // Helper: extrae steamId desde claimed_id
@@ -294,33 +309,15 @@ async function pteroSendCommand(command: string): Promise<void> {
   }
 }
 
-// ====== Util: subir match.json y devolver URL firmada (temporal) ======
-async function uploadMatchJsonAndSign(matchJson: any): Promise<string> {
-  const bucket = admin.storage().bucket(); // bucket default del proyecto
-  const path = `matchzy/current.json`;
-
-  const file = bucket.file(path);
-  const content = JSON.stringify(matchJson, null, 2);
-
-  await file.save(content, {
-    contentType: 'application/json',
-    metadata: { cacheControl: 'no-store' },
-  });
-
-  const expires = Date.now() + 5 * 60 * 1000; // 5 min
-  const [signedUrl] = await file.getSignedUrl({ action: 'read', expires });
-  return signedUrl;
-}
-
 // =====================================================
 // Start match (shared) — NUEVO ✅
 //  - lock (startInProgress)
-//  - genera json + signed url
+//  - usa /api/match/config para el JSON del match
 //  - ejecuta matchzy_loadmatch_url
 //  - actualiza estado a en_curso
 // =====================================================
 type StartMatchResult =
-  | { ok: true; command: string; signedUrl: string }
+  | { ok: true; command: string; matchConfigUrl: string }
   | { ok: false; reason: 'NOT_READY' | 'LOCKED' | 'NOT_FOUND' }
   | { ok: false; reason: 'UNAUTHENTICATED'; error: string }
   | { ok: false; reason: 'FAILED'; error: string };
@@ -390,19 +387,19 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
       return { ok: false, reason: 'NOT_READY' };
     }
 
-    const signedUrl = await uploadMatchJsonAndSign(matchJsonResult.match);
-    const cmd = `matchzy_loadmatch_url "${signedUrl}"`;
+    const matchConfigUrl = `${getPublicBaseUrl()}/api/match/config`;
+    const cmd = `matchzy_loadmatch_url "${matchConfigUrl}"`;
     await pteroSendCommand(cmd);
 
     await ref.update({
       estado: 'en_curso',
       startInProgress: false,
-      matchConfigUrl: signedUrl,
+      matchConfigUrl,
       startedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return { ok: true, command: cmd, signedUrl };
+    return { ok: true, command: cmd, matchConfigUrl };
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     logger.error(`startMatchIfReady failed: ${msg}`);
