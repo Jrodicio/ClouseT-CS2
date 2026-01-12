@@ -46,6 +46,102 @@ const MATCH_DOC_PATH = 'matches/current';
 const TEAM1_NAME = 'Team A';
 const TEAM2_NAME = 'Team B';
 
+type MatchJson = {
+  map: string;
+  team1: { name: string; players: string[] };
+  team2: { name: string; players: string[] };
+};
+
+type MatchJsonResult =
+  | { ok: true; match: MatchJson }
+  | { ok: false; reason: 'NOT_FOUND' | 'NOT_READY'; error: string };
+
+type ServerConnectionInfo =
+  | {
+      ok: true;
+      host: string;
+      port: number;
+      spectatePort: number;
+      connectUrl: string;
+      spectateUrl: string;
+    }
+  | { ok: false; error: string };
+
+function getServerConnectionInfo(): ServerConnectionInfo {
+  const host = GAME_SERVER_HOST.value();
+  const portRaw = GAME_SERVER_PORT.value();
+  const spectatePortRaw = GAME_SERVER_SPECTATE_PORT.value() || portRaw;
+
+  if (!host || !portRaw) {
+    return { ok: false, error: 'Missing GAME_SERVER_HOST or GAME_SERVER_PORT secret' };
+  }
+
+  const port = Number(portRaw);
+  const spectatePort = Number(spectatePortRaw);
+
+  if (!Number.isFinite(port) || port <= 0 || !Number.isFinite(spectatePort) || spectatePort <= 0) {
+    return { ok: false, error: 'Invalid GAME_SERVER_PORT or GAME_SERVER_SPECTATE_PORT secret' };
+  }
+
+  return {
+    ok: true,
+    host,
+    port,
+    spectatePort,
+    connectUrl: `steam://connect/${host}:${port}`,
+    spectateUrl: `steam://connect/${host}:${spectatePort}`,
+  };
+}
+
+function toPlayerList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id) => typeof id === 'string') : [];
+}
+
+function buildMatchJson(
+  map: unknown,
+  team1: { name?: unknown; players?: unknown },
+  team2: { name?: unknown; players?: unknown }
+): MatchJsonResult {
+  if (!map || typeof map !== 'string') {
+    return { ok: false, reason: 'NOT_READY', error: 'Missing map' };
+  }
+
+  const team1Players = toPlayerList(team1?.players);
+  const team2Players = toPlayerList(team2?.players);
+
+  if (team1Players.length !== 5 || team2Players.length !== 5) {
+    return { ok: false, reason: 'NOT_READY', error: 'Teams must have 5 players each' };
+  }
+
+  return {
+    ok: true,
+    match: {
+      map,
+      team1: {
+        name: typeof team1?.name === 'string' ? team1.name : TEAM1_NAME,
+        players: team1Players,
+      },
+      team2: {
+        name: typeof team2?.name === 'string' ? team2.name : TEAM2_NAME,
+        players: team2Players,
+      },
+    },
+  };
+}
+
+async function getCurrentMatchJson(): Promise<MatchJsonResult> {
+  const db = admin.firestore();
+  const ref = db.doc(MATCH_DOC_PATH);
+  const snap = await ref.get();
+
+  if (!snap.exists) {
+    return { ok: false, reason: 'NOT_FOUND', error: 'Match not found' };
+  }
+
+  const cur = snap.data() as any;
+  return buildMatchJson(cur?.map, cur?.team1 ?? {}, cur?.team2 ?? {});
+}
+
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -156,6 +252,17 @@ export const matchOrchestrator = onDocumentWritten(
 );
 
 // ====== Util: ejecutar comando en Pterodactyl (Client API) ======
+class PterodactylCommandError extends Error {
+  status: number;
+  body: string;
+
+  constructor(status: number, body: string) {
+    super(`Pterodactyl command failed: HTTP ${status} ${body}`.trim());
+    this.status = status;
+    this.body = body;
+  }
+}
+
 async function pteroSendCommand(command: string): Promise<void> {
   const panelOrigin = PTERO_PANEL_ORIGIN.value(); // ej https://pterodactyl.histeriaservers.com.ar
   const serverId = PTERO_SERVER_ID.value(); // ej ba39664e
@@ -183,7 +290,7 @@ async function pteroSendCommand(command: string): Promise<void> {
 
   if (!r.ok) {
     const t = await r.text().catch(() => '');
-    throw new Error(`Pterodactyl command failed: HTTP ${r.status} ${t}`.trim());
+    throw new PterodactylCommandError(r.status, t);
   }
 }
 
@@ -215,6 +322,7 @@ async function uploadMatchJsonAndSign(matchJson: any): Promise<string> {
 type StartMatchResult =
   | { ok: true; command: string; signedUrl: string }
   | { ok: false; reason: 'NOT_READY' | 'LOCKED' | 'NOT_FOUND' }
+  | { ok: false; reason: 'UNAUTHENTICATED'; error: string }
   | { ok: false; reason: 'FAILED'; error: string };
 
 async function startMatchIfReady(): Promise<StartMatchResult> {
@@ -273,14 +381,17 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
       return { ok: false, reason: 'NOT_READY' };
     }
 
-    const matchJson = {
-      map,
-      team1: { name: cur?.team1?.name ?? TEAM1_NAME, players: t1 },
-      team2: { name: cur?.team2?.name ?? TEAM2_NAME, players: t2 },
-    };
+    const matchJsonResult = buildMatchJson(map, cur?.team1 ?? {}, cur?.team2 ?? {});
+    if (!matchJsonResult.ok) {
+      await ref.update({
+        startInProgress: false,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return { ok: false, reason: 'NOT_READY' };
+    }
 
-    const signedUrl = await uploadMatchJsonAndSign(matchJson);
-    const cmd = `matchzy_loadmatch_url ${signedUrl}`;
+    const signedUrl = await uploadMatchJsonAndSign(matchJsonResult.match);
+    const cmd = `matchzy_loadmatch_url "${signedUrl}"`;
     await pteroSendCommand(cmd);
 
     await ref.update({
@@ -295,6 +406,19 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     logger.error(`startMatchIfReady failed: ${msg}`);
+
+    if (err instanceof PterodactylCommandError && err.status === 401) {
+      const authMsg =
+        'Pterodactyl unauthenticated: verify PTERO_CLIENT_KEY, PTERO_SERVER_ID, and PTERO_PANEL_ORIGIN';
+      await ref.update({
+        startInProgress: false,
+        startError: authMsg,
+        startFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: false, reason: 'UNAUTHENTICATED', error: authMsg };
+    }
 
     await ref.update({
       startInProgress: false,
@@ -502,33 +626,13 @@ export const api = onRequest(
     // Server connection: /api/server/connection
     // ======================
     if (path === 'server/connection') {
-      const host = GAME_SERVER_HOST.value();
-      const portRaw = GAME_SERVER_PORT.value();
-      const spectatePortRaw = GAME_SERVER_SPECTATE_PORT.value() || portRaw;
-
-      if (!host || !portRaw) {
-        res.status(500).send('Missing GAME_SERVER_HOST or GAME_SERVER_PORT secret');
+      const connection = getServerConnectionInfo();
+      if (!connection.ok) {
+        res.status(500).send(connection.error);
         return;
       }
 
-      const port = Number(portRaw);
-      const spectatePort = Number(spectatePortRaw);
-
-      if (!Number.isFinite(port) || port <= 0 || !Number.isFinite(spectatePort) || spectatePort <= 0) {
-        res.status(500).send('Invalid GAME_SERVER_PORT or GAME_SERVER_SPECTATE_PORT secret');
-        return;
-      }
-
-      const connectUrl = `steam://connect/${host}:${port}`;
-      const spectateUrl = `steam://connect/${host}:${spectatePort}`;
-
-      res.status(200).json({
-        host,
-        port,
-        spectatePort,
-        connectUrl,
-        spectateUrl,
-      });
+      res.status(200).json(connection);
       return;
     }
 
@@ -595,21 +699,11 @@ export const api = onRequest(
         const team1 = payload?.team1 ?? {};
         const team2 = payload?.team2 ?? {};
 
-        if (!map || typeof map !== 'string') {
-          res.status(400).send('Missing map');
+        const matchJsonResult = buildMatchJson(map, team1, team2);
+        if (!matchJsonResult.ok) {
+          res.status(400).send(matchJsonResult.error);
           return;
         }
-
-        const team1Players: string[] = Array.isArray(team1.players) ? team1.players : [];
-        const team2Players: string[] = Array.isArray(team2.players) ? team2.players : [];
-
-        if (team1Players.length !== 5 || team2Players.length !== 5) {
-          res.status(400).send('Teams must have 5 players each');
-          return;
-        }
-
-        const team1Name = typeof team1.name === 'string' ? team1.name : TEAM1_NAME;
-        const team2Name = typeof team2.name === 'string' ? team2.name : TEAM2_NAME;
 
         const db = admin.firestore();
         const ref = db.doc(MATCH_DOC_PATH);
@@ -617,9 +711,9 @@ export const api = onRequest(
         await ref.set(
           {
             estado: 'seleccionando_mapa',
-            map,
-            team1: { name: team1Name, players: team1Players },
-            team2: { name: team2Name, players: team2Players },
+            map: matchJsonResult.match.map,
+            team1: matchJsonResult.match.team1,
+            team2: matchJsonResult.match.team2,
             queue: [],
             unassigned: [],
             turn: 'team1',
@@ -632,12 +726,88 @@ export const api = onRequest(
         );
 
         const startResult = await startMatchIfReady();
-        res.status(200).json({ ok: true, startResult });
+        const connection = getServerConnectionInfo();
+
+        if (startResult.ok) {
+          res.status(200).json({
+            ok: true,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
+          return;
+        }
+
+        if (startResult.reason === 'NOT_READY') {
+          res.status(409).json({
+            ok: false,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
+          return;
+        }
+
+        if (startResult.reason === 'LOCKED') {
+          res.status(423).json({
+            ok: false,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
+          return;
+        }
+
+        if (startResult.reason === 'NOT_FOUND') {
+          res.status(404).json({
+            ok: false,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
+          return;
+        }
+
+        if (startResult.reason === 'UNAUTHENTICATED') {
+          res.status(502).json({
+            ok: false,
+            startResult,
+            connection,
+            match: matchJsonResult.match,
+          });
+          return;
+        }
+
+        res.status(502).json({
+          ok: false,
+          startResult,
+          connection,
+          match: matchJsonResult.match,
+        });
         return;
       } catch (e: any) {
         res.status(400).send(`Invalid JSON body: ${e?.message ?? String(e)}`);
         return;
       }
+    }
+
+    // ======================
+    // MATCH JSON (current): /api/match/json
+    // ======================
+    if (path === 'match/json') {
+      const matchResult = await getCurrentMatchJson();
+      if (!matchResult.ok) {
+        if (matchResult.reason === 'NOT_FOUND') {
+          res.status(404).json(matchResult);
+          return;
+        }
+
+        res.status(409).json(matchResult);
+        return;
+      }
+
+      res.status(200).json(matchResult.match);
+      return;
     }
 
     // ======================
@@ -653,6 +823,8 @@ export const api = onRequest(
         res.status(423).json(r);
       } else if (r.reason === 'NOT_FOUND') {
         res.status(404).json(r);
+      } else if (r.reason === 'UNAUTHENTICATED') {
+        res.status(502).json(r);
       } else {
         res.status(500).json(r);
       }
