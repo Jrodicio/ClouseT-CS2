@@ -35,6 +35,7 @@ export type MatchDoc = {
   // campos “extra” que ya estás usando en functions
   unassigned?: string[];
   turn?: 'team1' | 'team2';
+  finalizeBy?: string[];
 
   updatedAt?: any;
 };
@@ -253,6 +254,46 @@ export class MatchService {
     });
   }
 
+  async requestFinalizeMatch(mySteamId: string): Promise<void> {
+    if (!mySteamId) return;
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(this.matchRef);
+      if (!snap.exists()) throw new Error('Match no existe.');
+
+      const match = snap.data() as MatchDoc;
+      if (match.estado !== 'en_curso') {
+        throw new Error(`No se puede finalizar: estado = ${match.estado}`);
+      }
+
+      const leaderA = match.team1?.players?.[0] ?? null;
+      const leaderB = match.team2?.players?.[0] ?? null;
+
+      if (!leaderA || !leaderB) {
+        throw new Error('No hay líderes definidos.');
+      }
+
+      if (mySteamId !== leaderA && mySteamId !== leaderB) {
+        throw new Error('Solo los líderes pueden finalizar el match.');
+      }
+
+      const finalizeBy = Array.isArray(match.finalizeBy) ? [...match.finalizeBy] : [];
+      if (!finalizeBy.includes(mySteamId)) finalizeBy.push(mySteamId);
+
+      const bothConfirmed = finalizeBy.includes(leaderA) && finalizeBy.includes(leaderB);
+
+      if (bothConfirmed) {
+        tx.set(this.matchRef, initialMatch(), { merge: false });
+        return;
+      }
+
+      tx.update(this.matchRef, {
+        finalizeBy,
+        updatedAt: serverTimestamp(),
+      });
+    });
+  }
+
   /**
    * Ban REAL por transacción:
    * - solo en estado seleccionando_mapa
@@ -319,6 +360,7 @@ export class MatchService {
       if (remaining.length === 1) {
         update.map = remaining[0];
         update.estado = 'en_curso';
+        update.finalizeBy = [];
       }
 
       tx.update(this.matchRef, update);

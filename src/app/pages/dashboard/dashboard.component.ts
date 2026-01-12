@@ -37,6 +37,13 @@ export class DashboardComponent {
   watchMatch = false;
   serverConnection: ServerConnection | null = null;
   serverConnectionError = '';
+  readonly fallbackServerConnection: ServerConnection = {
+    host: '45.235.98.222',
+    port: 27159,
+    spectatePort: 27159,
+    connectUrl: 'steam://connect/45.235.98.222:27159',
+    spectateUrl: 'steam://connect/45.235.98.222:27159',
+  };
 
   // Steam cache
   steamMe: SteamMe | null = null;
@@ -131,6 +138,10 @@ export class DashboardComponent {
     } catch (err: any) {
       this.serverConnectionError = err?.message ?? String(err);
     }
+  }
+
+  get activeServerConnection(): ServerConnection {
+    return this.serverConnection ?? this.fallbackServerConnection;
   }
 
   myStatus(match: MatchDoc | null, mySteamId: string | null): 'fuera' | 'cola' | 'team1' | 'team2' {
