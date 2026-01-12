@@ -20,6 +20,9 @@ const STEAM_API_KEY = defineSecret('STEAM_API_KEY');
 const PTERO_CLIENT_KEY = defineSecret('PTERO_CLIENT_KEY');
 const PTERO_SERVER_ID = defineSecret('PTERO_SERVER_ID');
 const PTERO_PANEL_ORIGIN = defineSecret('PTERO_PANEL_ORIGIN');
+const GAME_SERVER_HOST = defineSecret('GAME_SERVER_HOST');
+const GAME_SERVER_PORT = defineSecret('GAME_SERVER_PORT');
+const GAME_SERVER_SPECTATE_PORT = defineSecret('GAME_SERVER_SPECTATE_PORT');
 
 // ====== Steam OpenID ======
 const STEAM_OPENID_ENDPOINT = 'https://steamcommunity.com/openid/login';
@@ -337,7 +340,15 @@ export const helloWorld = onRequest((request, response) => {
 // ====== API principal ======
 export const api = onRequest(
   {
-    secrets: [STEAM_API_KEY, PTERO_CLIENT_KEY, PTERO_SERVER_ID, PTERO_PANEL_ORIGIN],
+    secrets: [
+      STEAM_API_KEY,
+      PTERO_CLIENT_KEY,
+      PTERO_SERVER_ID,
+      PTERO_PANEL_ORIGIN,
+      GAME_SERVER_HOST,
+      GAME_SERVER_PORT,
+      GAME_SERVER_SPECTATE_PORT,
+    ],
     region: 'us-central1',
   },
   async (req, res): Promise<void> => {
@@ -470,6 +481,40 @@ export const api = onRequest(
         res.status(500).send(`Steam callback exception: ${msg}`);
         return;
       }
+    }
+
+    // ======================
+    // Server connection: /api/server/connection
+    // ======================
+    if (path === 'server/connection') {
+      const host = GAME_SERVER_HOST.value();
+      const portRaw = GAME_SERVER_PORT.value();
+      const spectatePortRaw = GAME_SERVER_SPECTATE_PORT.value() || portRaw;
+
+      if (!host || !portRaw) {
+        res.status(500).send('Missing GAME_SERVER_HOST or GAME_SERVER_PORT secret');
+        return;
+      }
+
+      const port = Number(portRaw);
+      const spectatePort = Number(spectatePortRaw);
+
+      if (!Number.isFinite(port) || port <= 0 || !Number.isFinite(spectatePort) || spectatePort <= 0) {
+        res.status(500).send('Invalid GAME_SERVER_PORT or GAME_SERVER_SPECTATE_PORT secret');
+        return;
+      }
+
+      const connectUrl = `steam://connect/${host}:${port}`;
+      const spectateUrl = `steam://connect/${host}:${spectatePort}`;
+
+      res.status(200).json({
+        host,
+        port,
+        spectatePort,
+        connectUrl,
+        spectateUrl,
+      });
+      return;
     }
 
     // ======================

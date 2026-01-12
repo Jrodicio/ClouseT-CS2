@@ -22,6 +22,11 @@ export type MatchDoc = {
   estado: MatchEstado;
   map: string | null;
 
+  mapPool?: string[];
+  bannedMaps?: string[];
+  mapTurn?: 'team1' | 'team2' | null;
+  mapBanCount?: number;
+
   team1: { name: string; players: string[] };
   team2: { name: string; players: string[] };
 
@@ -39,6 +44,15 @@ export type MatchDoc = {
 };
 
 const MATCH_PATH = ['matches', 'current'] as const;
+const DEFAULT_MAP_POOL = [
+  'de_inferno',
+  'de_mirage',
+  'de_nuke',
+  'de_overpass',
+  'de_ancient',
+  'de_vertigo',
+  'de_anubis',
+] as const;
 
 function initialMatch(): MatchDoc {
   return {
