@@ -1,0 +1,116 @@
+.dashboard {
+  padding: 16px;
+  font-family: system-ui;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 2.2fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.dashboard-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dashboard-match {
+  min-width: 0;
+}
+
+.dashboard-card {
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.dashboard-profile {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.dashboard-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.dashboard-profile-text {
+  min-width: 0;
+}
+
+.dashboard-name {
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-meta {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.dashboard-link {
+  font-size: 12px;
+}
+
+.dashboard-status {
+  margin-top: 12px;
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+}
+
+.dashboard-status-text {
+  font-size: 13px;
+}
+
+.dashboard-button {
+  padding: 10px 14px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.dashboard-link-button {
+  display: inline-block;
+  text-align: center;
+  text-decoration: none;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.dashboard-actions-title {
+  margin: 0 0 8px 0;
+}
+
+.dashboard-muted {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.dashboard-note {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.dashboard-error {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 8px;
+}
+
+.dashboard-space-top {
+  margin-top: 12px;
+}
+
+.dashboard-space-top-sm {
+  margin-top: 10px;
+}
+
+.dashboard-space-bottom {
+  margin-bottom: 10px;
+}
