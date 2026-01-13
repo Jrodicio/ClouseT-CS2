@@ -1,7 +1,12 @@
-.board {
-  border: 1px solid #e5e5e5;
-  border-radius: 14px;
-  padding: 12px;
+.custom-wrapper.match-board-wrapper {
+  height: 100%;
+  width: 100%;
+}
+
+.board.custom-card {
+  padding: 16px;
+  width: min(1100px, 100%);
+  text-align: left;
 }
 
 .board__header {
@@ -9,7 +14,7 @@
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 10px;
   font-size: 13px;
 }
@@ -34,12 +39,11 @@
   align-items: start;
 }
 
-.col,
-.center {
-  border: 1px solid #eee;
-  border-radius: 12px;
-  padding: 10px;
+.col.custom-card,
+.center.custom-card {
+  padding: 12px;
   min-height: 360px;
+  text-align: left;
 }
 
 .col__title,
@@ -53,26 +57,29 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 4px;
 }
 
-.player {
+.player-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid #ddd;
-  border-radius: 12px;
-  padding: 6px 8px;
+  gap: 12px;
+  width: calc(100% - 8px);
+  box-sizing: border-box;
+  margin: 4px;
+  min-height: 52px;
 }
 
-.player.leader {
+.player-card.leader {
   border-style: solid;
   border-width: 2px;
   border-color: #ff8a00;
 }
 
 .avatar {
-  width: 26px;
-  height: 26px;
+  width: auto;
+  height: 100%;
+  max-height: 46px;
   border-radius: 8px;
   object-fit: cover;
   flex: 0 0 auto;
@@ -89,6 +96,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
 }
 
 .tiny {
@@ -106,16 +115,11 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  padding: 4px;
 }
 
 .tile {
-  border: 1px solid #ddd;
-  border-radius: 12px;
-  padding: 8px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  min-height: 44px;
+  min-height: 52px;
 }
 
 .selectable {
@@ -124,7 +128,7 @@
 
 .tile.selected {
   border-width: 2px;
-  border-color: #111;
+  border-color: #fffffe;
 }
 
 .err {
