@@ -715,7 +715,7 @@ export const api = onRequest(
         await ref.set(
           {
             estado: 'seleccionando_mapa',
-            map: matchJsonResult.match.map,
+            map: matchJsonResult.match.maplist[0],
             team1: matchJsonResult.match.team1,
             team2: matchJsonResult.match.team2,
             queue: [],
