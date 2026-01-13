@@ -12,3 +12,28 @@
   width: auto;
   display: block;
 }
+
+.dev-login {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dev-label {
+  font-size: 12px;
+  color: #666;
+  text-align: left;
+}
+
+.dev-input {
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.dev-note {
+  font-size: 12px;
+  color: #999;
+}
