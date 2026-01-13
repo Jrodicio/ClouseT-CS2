@@ -62,7 +62,8 @@ const TEAM1_NAME = 'Team A';
 const TEAM2_NAME = 'Team B';
 
 type MatchJson = {
-  map: string;
+  num_maps: number;
+  maplist: string[];
   team1: { name: string; players: string[] };
   team2: { name: string; players: string[] };
 };
@@ -131,7 +132,8 @@ function buildMatchJson(
   return {
     ok: true,
     match: {
-      map,
+      num_maps: 1,
+      maplist: [map],
       team1: {
         name: typeof team1?.name === 'string' ? team1.name : TEAM1_NAME,
         players: team1Players,
@@ -387,7 +389,7 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
       return { ok: false, reason: 'NOT_READY' };
     }
 
-    const matchConfigUrl = `${getPublicBaseUrl()}/api/match/config`;
+    const matchConfigUrl = `https://${getPublicBaseUrl()}/api/match/config`;
     const cmd = `matchzy_loadmatch_url "${matchConfigUrl}"`;
     await pteroSendCommand(cmd);
 
