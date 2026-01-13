@@ -147,8 +147,8 @@ function normalizePlayers(
       return acc;
     }, {});
 
-    const ids = Object.keys(namesFromArray);
-    return { ids, names: namesFromArray };
+    const idsFromArray = Object.keys(namesFromArray);
+    return { ids: idsFromArray, names: namesFromArray };
   }
 
   const namesFromObject = toStringRecord(players);
