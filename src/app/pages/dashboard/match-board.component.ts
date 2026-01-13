@@ -55,6 +55,8 @@ export class MatchBoardComponent {
   banErr = '';
   busyFinalize = false;
   finalizeErr = '';
+  busyCancel = false;
+  cancelErr = '';
 
   get teamA() {
     return this.match?.team1?.players ?? [];
@@ -125,6 +127,12 @@ export class MatchBoardComponent {
   }
 
   get canFinalize(): boolean {
+    if (this.match?.estado !== 'en_curso') return false;
+    if (!this.mySteamId) return false;
+    return this.mySteamId === this.leaderAId || this.mySteamId === this.leaderBId;
+  }
+
+  get canCancel(): boolean {
     if (this.match?.estado !== 'en_curso') return false;
     if (!this.mySteamId) return false;
     return this.mySteamId === this.leaderAId || this.mySteamId === this.leaderBId;
@@ -212,6 +220,20 @@ export class MatchBoardComponent {
       this.finalizeErr = e?.message ?? String(e);
     } finally {
       this.busyFinalize = false;
+    }
+  }
+
+  async onCancel(): Promise<void> {
+    if (!this.canCancel) return;
+
+    try {
+      this.busyCancel = true;
+      this.cancelErr = '';
+      await this.matchSvc.cancelMatch();
+    } catch (e: any) {
+      this.cancelErr = e?.message ?? String(e);
+    } finally {
+      this.busyCancel = false;
     }
   }
 }

@@ -225,6 +225,22 @@
                 <div class="err">{{ finalizeErr }}</div>
               }
             }
+
+            @if (canCancel) {
+              <button
+                class="btn danger"
+                type="button"
+                [disabled]="busyCancel"
+                (click)="onCancel()"
+                style="margin-top:8px;width:100%;"
+              >
+                {{ busyCancel ? 'Cancelando…' : 'Cancelar match' }}
+              </button>
+
+              @if (cancelErr) {
+                <div class="err">{{ cancelErr }}</div>
+              }
+            }
           }
         }
       </section>

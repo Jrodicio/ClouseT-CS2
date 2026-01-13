@@ -60,6 +60,15 @@ function extractSteamId(claimedId: string | undefined | null): string | null {
 const MATCH_DOC_PATH = 'matches/current';
 const TEAM1_NAME = 'Team A';
 const TEAM2_NAME = 'Team B';
+const DEFAULT_MAP_POOL = [
+  'de_inferno',
+  'de_mirage',
+  'de_nuke',
+  'de_overpass',
+  'de_ancient',
+  'de_vertigo',
+  'de_anubis',
+] as const;
 
 type MatchJson = {
   num_maps: number;
@@ -188,6 +197,21 @@ function buildMatchJson(
         players: team2Normalized.names,
       },
     },
+  };
+}
+
+function initialMatchDoc() {
+  return {
+    estado: 'esperando_jugadores',
+    map: null,
+    team1: { name: TEAM1_NAME, players: [] },
+    team2: { name: TEAM2_NAME, players: [] },
+    queue: [],
+    mapPool: [...DEFAULT_MAP_POOL],
+    bannedMaps: [],
+    mapTurn: 'team1',
+    mapBanCount: 0,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 }
 
@@ -864,6 +888,30 @@ export const api = onRequest(
         return;
       } catch (e: any) {
         res.status(400).send(`Invalid JSON body: ${e?.message ?? String(e)}`);
+        return;
+      }
+    }
+
+    // ======================
+    // CANCEL MATCH: /api/match/cancel
+    // ======================
+    if (path === 'match/cancel') {
+      if (req.method !== 'POST') {
+        res.status(405).send('Method not allowed');
+        return;
+      }
+
+      try {
+        await pteroSendCommand('mp_restartgame 1');
+        const db = admin.firestore();
+        const ref = db.doc(MATCH_DOC_PATH);
+        await ref.set(initialMatchDoc(), { merge: false });
+        res.status(200).json({ ok: true });
+        return;
+      } catch (e: any) {
+        const msg = e?.message ?? String(e);
+        logger.error(`match/cancel error: ${msg}`);
+        res.status(502).send(`match/cancel error: ${msg}`);
         return;
       }
     }
