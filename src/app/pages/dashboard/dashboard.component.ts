@@ -1,6 +1,6 @@
 import { Component, DestroyRef, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { AsyncPipe, NgStyle } from '@angular/common';
+import { AsyncPipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { AuthService } from '../../core/auth/auth.service';
@@ -25,8 +25,9 @@ type ServerConnection = {
 @Component({
   standalone: true,
   selector: 'app-dashboard',
-  imports: [AsyncPipe, NgStyle, MatchBoardComponent],
+  imports: [AsyncPipe, MatchBoardComponent],
   templateUrl: './dashboard.component.html',
+  styleUrls: ['./dashboard.component.css'],
 })
 export class DashboardComponent {
   auth = inject(AuthService);
