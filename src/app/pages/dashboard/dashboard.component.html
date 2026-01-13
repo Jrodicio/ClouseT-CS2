@@ -4,7 +4,7 @@
       <div class="dashboard-grid">
         <div class="dashboard-left">
           <!-- ================= LEFT: Mi Steam ================= -->
-          <section class="dashboard-card">
+          <section class="custom-card">
             <div class="dashboard-profile">
               @if (profileOf(mySteamId); as me) {
                 <img
@@ -61,14 +61,14 @@
             </div>
 
             <div class="dashboard-space-top">
-              <button (click)="logout()" class="dashboard-button">
+              <button (click)="logout()" class="button-27">
                 Logout
               </button>
             </div>
           </section>
 
           <!-- ================= LEFT: Acciones ================= -->
-          <section class="dashboard-card">
+          <section class="custom-card">
             <h3 class="dashboard-actions-title">Acciones</h3>
 
             @if (match$ | async; as match) {
@@ -81,14 +81,14 @@
                   @if (myStatus(match, mySteamId) === 'cola') {
                     <button
                       (click)="leave(match, mySteamId)"
-                      class="dashboard-button"
+                      class="button-27"
                     >
                       Salir del match
                     </button>
                   } @else {
                     <button
                       (click)="join(match, mySteamId)"
-                      class="dashboard-button"
+                      class="button-27"
                     >
                       Ingresar al match
                     </button>
@@ -103,7 +103,7 @@
                   @if (myStatus(match, mySteamId) === 'fuera') {
                     <button
                       (click)="toggleWatch()"
-                      class="dashboard-button"
+                      class="button-27"
                     >
                       {{ watchMatch ? 'Dejar de ver' : 'Ver match' }}
                     </button>
@@ -128,7 +128,7 @@
                   @if (myStatus(match, mySteamId) === 'fuera') {
                     <button
                       (click)="toggleWatch()"
-                      class="dashboard-button"
+                      class="button-27"
                     >
                       {{ watchMatch ? 'Dejar de ver' : 'Ver match' }}
                     </button>
@@ -147,7 +147,7 @@
                   @if (myStatus(match, mySteamId) === 'fuera') {
                     <button
                       (click)="toggleWatch()"
-                      class="dashboard-button"
+                      class="button-27"
                     >
                       {{ watchMatch ? 'Dejar de ver' : 'Ver match' }}
                     </button>
@@ -213,7 +213,7 @@
         </div>
       </div>
     } @else {
-      <button (click)="logout()">Logoff</button>
+      <button (click)="logout()" class="button-27">Logoff</button>
       <div>No permitido login anónimo</div>
     }
   } @else {

@@ -1,30 +1,14 @@
-.login-wrapper {
-    height: 100vh;
-    width: 100vw;
-    display: flex;
-    align-items: center;      /* centrado vertical */
-    justify-content: center;  /* centrado horizontal */
-  }
+.steam-btn {
+  display: flex;
+  align-items: center;      /* centra verticalmente imagen + texto */
+  justify-content: center;  /* centra todo el contenido */
+  gap: 12px;                /* espacio entre logo y texto */
+}
 
-  .login-card {
-    text-align: center;
-    padding: 32px 40px;
-    border-radius: 12px;
-    background: #010003;
-    box-shadow: 0 10px 30px rgba(0,0,0,.4);
-  }
-  
-  .steam-btn {
-    display: flex;
-    align-items: center;      /* centra verticalmente imagen + texto */
-    justify-content: center;  /* centra todo el contenido */
-    gap: 12px;                /* espacio entre logo y texto */
-  }
-  
-  /* Logo */
-  .img-button {
-    height: 100%;             /* ocupa todo el alto del botón (como querías) */
-    max-height: 32px;         /* límite sano (ajustable) */
-    width: auto;
-    display: block;
-  }
+/* Logo */
+.img-button {
+  height: 100%;             /* ocupa todo el alto del botón (como querías) */
+  max-height: 32px;         /* límite sano (ajustable) */
+  width: auto;
+  display: block;
+}
