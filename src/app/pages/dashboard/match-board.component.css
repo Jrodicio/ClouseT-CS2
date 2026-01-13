@@ -198,6 +198,12 @@
   font-weight: 800;
 }
 
+.btn.danger {
+  border-color: #b00020;
+  color: #b00020;
+  font-weight: 700;
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

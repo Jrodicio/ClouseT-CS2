@@ -463,6 +463,14 @@ export class MatchService {
     });
   }
 
+  async cancelMatch(): Promise<void> {
+    const r = await fetch('/api/match/cancel', { method: 'POST' });
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      throw new Error(`No se pudo cancelar el match (${r.status}) ${t}`.trim());
+    }
+  }
+
   dispose(): void {
     if (this.unsub) this.unsub();
     this.unsub = null;
