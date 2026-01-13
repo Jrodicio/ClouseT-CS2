@@ -9,7 +9,7 @@ import {
 } from 'firebase/auth';
 import { Observable } from 'rxjs';
 import { auth } from '../firebase/firebase';
-// import { signInAnonymously } from 'firebase/auth';
+import { signInAnonymously } from 'firebase/auth';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -50,10 +50,10 @@ export class AuthService {
     await signOut(auth);
   }
 
-  // async loginAnonymous(): Promise<User> {
-  //   await this.ensurePersistence();
-  //   const cred = await signInAnonymously(auth);
-  //   return cred.user;
-  // }
+  async loginAnonymous(): Promise<User> {
+    await this.ensurePersistence();
+    const cred = await signInAnonymously(auth);
+    return cred.user;
+  }
 
 }

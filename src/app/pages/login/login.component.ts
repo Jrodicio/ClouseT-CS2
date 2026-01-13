@@ -6,29 +6,8 @@ import { AuthService } from '../../core/auth/auth.service';
 @Component({
   standalone: true,
   imports: [CommonModule],
-  template: `
-    <div style="max-width:420px;margin:40px auto;font-family:system-ui;">
-      <h1>Login</h1>
-      <p>Entrá con Steam para acceder al dashboard.</p>
-
-      <button (click)="loginSteam()" style="padding:10px 14px;cursor:pointer;">
-        Login con Steam
-      </button>
-
-      <!-- <button (click)="loginAnon()" style="padding:10px 14px;cursor:pointer; margin-left: 8px;">
-        Login anónimo (test)
-      </button> -->
-
-
-      @if (loading) {
-        <p style="margin-top:12px;">Procesando...</p>
-      }
-
-      @if (error) {
-        <p style="color:#b00020;margin-top:12px;">{{ error }}</p>
-      }
-    </div>
-  `,
+  templateUrl: './login.component.html',
+  styleUrls: ['./login.component.css']
 })
 
 export class LoginComponent implements OnInit {
@@ -64,19 +43,17 @@ export class LoginComponent implements OnInit {
     window.location.href = url;
   }
   
-  
-
-  // async loginAnon() {
-  //   this.loading = true;
-  //   this.error = '';
-  //   try {
-  //     await this.auth.loginAnonymous();
-  //     await this.router.navigateByUrl('/dashboard');
-  //   } catch (e: any) {
-  //     this.error = e?.message ?? 'Error en login anónimo';
-  //   } finally {
-  //     this.loading = false;
-  //   }
-  // }
+  async loginAnon() {
+    this.loading = true;
+    this.error = '';
+    try {
+      await this.auth.loginAnonymous();
+      await this.router.navigateByUrl('/dashboard');
+    } catch (e: any) {
+      this.error = e?.message ?? 'Error en login anónimo';
+    } finally {
+      this.loading = false;
+    }
+  }
 
 }
