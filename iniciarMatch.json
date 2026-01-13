@@ -1,24 +1,25 @@
 {
-    "map": "de_inferno",
-    "team1": {
-      "name": "Team A",
-      "players": [
-        "76561199090968113",
-        "76561198445516643",
-        "76561198021176634",
-        "76561198276017400",
-        "76561198100379916"
-      ]
-    },
-    "team2": {
-      "name": "Team B",
-      "players": [
-        "76561198060999596",
-        "76561198297095667",
-        "76561198809272993",
-        "76561198096561169",
-        "76561198445355417"
-      ]
+  "num_maps": 1,
+  "maplist": ["de_inferno"],
+  "team1": {
+    "name": "Team A",
+    "players": {
+      "76561199090968113": "SteamPlayerName1",
+      "76561198445516643": "SteamPlayerName2",
+      "76561198021176634": "SteamPlayerName3",
+      "76561198276017400": "SteamPlayerName4",
+      "76561198100379916": "SteamPlayerName5"
+    }
+  },
+  "team2": {
+    "name": "Team B",
+    "players": {
+      "76561198060999596": "SteamPlayerName6",
+      "76561198297095667": "SteamPlayerName7",
+      "76561198809272993": "SteamPlayerName8",
+      "76561198096561169": "SteamPlayerName9",
+      "76561198445355417": "SteamPlayerName0"
     }
   }
+}
   

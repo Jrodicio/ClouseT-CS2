@@ -64,8 +64,8 @@ const TEAM2_NAME = 'Team B';
 type MatchJson = {
   num_maps: number;
   maplist: string[];
-  team1: { name: string; players: string[] };
-  team2: { name: string; players: string[] };
+  team1: { name: string; players: Record<string, string> };
+  team2: { name: string; players: Record<string, string> };
 };
 
 type MatchJsonResult =
@@ -109,8 +109,51 @@ function getServerConnectionInfo(): ServerConnectionInfo {
   };
 }
 
-function toPlayerList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((id) => typeof id === 'string') : [];
+function toStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, string>>(
+    (acc, [key, val]) => {
+      if (typeof key === 'string' && typeof val === 'string') {
+        acc[key] = val;
+      }
+      return acc;
+    },
+    {}
+  );
+}
+
+function normalizePlayers(
+  players: unknown,
+  playerNames?: unknown
+): { ids: string[]; names: Record<string, string> } {
+  if (Array.isArray(players)) {
+    const ids = players.filter((id): id is string => typeof id === 'string');
+    if (ids.length > 0) {
+      const nameOverrides = toStringRecord(playerNames);
+      const names = ids.reduce<Record<string, string>>((acc, id) => {
+        acc[id] = nameOverrides[id] ?? id;
+        return acc;
+      }, {});
+      return { ids, names };
+    }
+
+    const namesFromArray = players.reduce<Record<string, string>>((acc, entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return acc;
+      for (const [key, val] of Object.entries(entry as Record<string, unknown>)) {
+        if (typeof key === 'string' && typeof val === 'string') {
+          acc[key] = val;
+        }
+      }
+      return acc;
+    }, {});
+
+    const ids = Object.keys(namesFromArray);
+    return { ids, names: namesFromArray };
+  }
+
+  const namesFromObject = toStringRecord(players);
+  const ids = Object.keys(namesFromObject);
+  return { ids, names: namesFromObject };
 }
 
 function buildMatchJson(
@@ -122,8 +165,10 @@ function buildMatchJson(
     return { ok: false, reason: 'NOT_READY', error: 'Missing map' };
   }
 
-  const team1Players = toPlayerList(team1?.players);
-  const team2Players = toPlayerList(team2?.players);
+  const team1Normalized = normalizePlayers(team1?.players, (team1 as any)?.playerNames);
+  const team2Normalized = normalizePlayers(team2?.players, (team2 as any)?.playerNames);
+  const team1Players = team1Normalized.ids;
+  const team2Players = team2Normalized.ids;
 
   if (team1Players.length !== 5 || team2Players.length !== 5) {
     return { ok: false, reason: 'NOT_READY', error: 'Teams must have 5 players each' };
@@ -136,11 +181,11 @@ function buildMatchJson(
       maplist: [map],
       team1: {
         name: typeof team1?.name === 'string' ? team1.name : TEAM1_NAME,
-        players: team1Players,
+        players: team1Normalized.names,
       },
       team2: {
         name: typeof team2?.name === 'string' ? team2.name : TEAM2_NAME,
-        players: team2Players,
+        players: team2Normalized.names,
       },
     },
   };
@@ -699,9 +744,29 @@ export const api = onRequest(
             ? JSON.parse(req.body || '{}')
             : (req.body ?? {});
 
-        const map = payload?.map;
+        if (payload?.num_maps !== undefined) {
+          if (typeof payload.num_maps !== 'number') {
+            res.status(400).send('num_maps must be a number');
+            return;
+          }
+          if (payload.num_maps !== 1) {
+            res.status(400).send('Only num_maps=1 is supported');
+            return;
+          }
+        }
+
+        const mapList = Array.isArray(payload?.maplist) ? payload.maplist : null;
+        if (mapList && (mapList.length !== 1 || typeof mapList[0] !== 'string')) {
+          res.status(400).send('maplist must be an array with a single map string');
+          return;
+        }
+
+        const map = mapList?.[0] ?? payload?.map;
         const team1 = payload?.team1 ?? {};
         const team2 = payload?.team2 ?? {};
+
+        const team1Normalized = normalizePlayers(team1?.players, (team1 as any)?.playerNames);
+        const team2Normalized = normalizePlayers(team2?.players, (team2 as any)?.playerNames);
 
         const matchJsonResult = buildMatchJson(map, team1, team2);
         if (!matchJsonResult.ok) {
@@ -716,8 +781,16 @@ export const api = onRequest(
           {
             estado: 'seleccionando_mapa',
             map: matchJsonResult.match.maplist[0],
-            team1: matchJsonResult.match.team1,
-            team2: matchJsonResult.match.team2,
+            team1: {
+              name: matchJsonResult.match.team1.name,
+              players: team1Normalized.ids,
+              playerNames: team1Normalized.names,
+            },
+            team2: {
+              name: matchJsonResult.match.team2.name,
+              players: team2Normalized.ids,
+              playerNames: team2Normalized.names,
+            },
             queue: [],
             unassigned: [],
             turn: 'team1',
