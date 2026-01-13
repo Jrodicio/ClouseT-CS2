@@ -35,6 +35,16 @@ function getBaseUrl(req: any) {
   return `${proto}://${host}`;
 }
 
+function isDevHost(host: string | undefined): boolean {
+  if (process.env.FUNCTIONS_EMULATOR || process.env.FIREBASE_EMULATOR_HUB) {
+    return true;
+  }
+
+  const hostname = (host ?? '').split(':')[0];
+  if (!hostname) return false;
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.dev');
+}
+
 function getPublicBaseUrl(): string {
   const explicitBaseUrl = PUBLIC_BASE_URL.value();
   if (explicitBaseUrl) {
@@ -595,6 +605,36 @@ export const api = onRequest(
       );
 
       res.redirect(302, steamUrl.toString());
+      return;
+    }
+
+    // ======================
+    // Steam OpenID dev login
+    // ======================
+    if (path === 'auth/steam/dev') {
+      const host = req.get('x-forwarded-host') || req.get('host');
+      if (!isDevHost(host)) {
+        res.status(403).send('Dev login only available on local/dev hosts');
+        return;
+      }
+
+      const steamId = String(req.query.steamId ?? '').trim();
+      if (!/^\d{15,20}$/.test(steamId)) {
+        res.status(400).send('Invalid steamId');
+        return;
+      }
+
+      const uid = `steam:${steamId}`;
+      const customToken = await admin.auth().createCustomToken(uid, { steamId, dev: true });
+      const redirect = (req.query.redirect as string | undefined) || '';
+      if (!redirect) {
+        res.status(200).send(customToken);
+        return;
+      }
+
+      const url = new URL(redirect);
+      url.searchParams.set('token', customToken);
+      res.redirect(302, url.toString());
       return;
     }
 
