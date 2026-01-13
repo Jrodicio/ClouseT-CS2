@@ -1,4 +1,3 @@
-<button (click)="logout()">Logoff</button>
 <div style="padding:16px;font-family:system-ui;">
   @if (auth.user$ | async; as user) {
     @if (steamIdFromUid(user.uid); as mySteamId) {
@@ -216,7 +215,8 @@
         }        
       </div>
     } @else {
-      <div>UID inválido (no es steam:...)</div>
+      <button (click)="logout()">Logoff</button>
+      <div>No permitido login anónimo</div>
     }
   } @else {
     <p>Cargando sesión…</p>
