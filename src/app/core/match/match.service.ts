@@ -126,6 +126,30 @@ function patchMissingFields(match: Partial<MatchDoc>): Partial<MatchDoc> {
   return patch;
 }
 
+function normalizeIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return [];
+  return ids
+    .map((id) => (id === null || id === undefined ? '' : String(id)))
+    .filter((id) => id.length > 0);
+}
+
+function normalizeMatchIds(match: MatchDoc): MatchDoc {
+  return {
+    ...match,
+    team1: {
+      ...match.team1,
+      players: normalizeIds(match.team1?.players),
+    },
+    team2: {
+      ...match.team2,
+      players: normalizeIds(match.team2?.players),
+    },
+    queue: normalizeIds(match.queue),
+    unassigned: normalizeIds(match.unassigned),
+    finalizeBy: normalizeIds(match.finalizeBy),
+  };
+}
+
 @Injectable({ providedIn: 'root' })
 export class MatchService {
   readonly matchRef = doc(db, ...MATCH_DRAFT_PATH);
@@ -162,12 +186,13 @@ export class MatchService {
         this.matchRef,
         (s) => {
           const data = (s.data() as MatchDoc) ?? null;
+          const normalized = data ? normalizeMatchIds(data) : null;
           this.zone.run(() => {
-            this._match$.next(data);
+            this._match$.next(normalized);
           });
-          if (data) {
-            this.maybeSelectLeaders(data).catch(() => {});
-            this.maybePublishMatch(data).catch(() => {});
+          if (normalized) {
+            this.maybeSelectLeaders(normalized).catch(() => {});
+            this.maybePublishMatch(normalized).catch(() => {});
           }
         },
         (err: FirestoreError) => {
