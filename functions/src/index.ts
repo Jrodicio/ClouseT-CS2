@@ -235,16 +235,6 @@ async function getCurrentMatchJson(): Promise<MatchJsonResult> {
   return buildMatchJson(cur?.map, cur?.team1 ?? {}, cur?.team2 ?? {});
 }
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const r = crypto.randomInt(0, i + 1);
-    [a[i], a[r]] = [a[r], a[i]];
-  }
-  return a;
-}
-
-
 // ====== Util: ejecutar comando en Pterodactyl (Client API) ======
 class PterodactylCommandError extends Error {
   status: number;
