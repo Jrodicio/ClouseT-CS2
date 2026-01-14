@@ -6,7 +6,7 @@
           <!-- ================= LEFT: Mi Steam ================= -->
           <section class="custom-card">
             <div class="dashboard-profile">
-              @if (profileOf(mySteamId); as me) {
+              @if (myProfile; as me) {
                 <img
                   [src]="me.avatar"
                   class="dashboard-avatar"
@@ -212,7 +212,6 @@
             <app-match-board
               [match]="match"
               [showDetails]="myStatus(match, mySteamId) !== 'fuera' || watchMatch"
-              [profileOf]="profileOf.bind(this)"
               [leaderA]="match.team1?.players?.[0] ?? null"
               [leaderB]="match.team2?.players?.[0] ?? null"
               [mySteamId]="mySteamId"
