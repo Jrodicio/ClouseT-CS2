@@ -4,9 +4,6 @@ import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import { defineSecret } from 'firebase-functions/params';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
-import { onTaskDispatched } from 'firebase-functions/v2/tasks';
-import { Timestamp } from 'firebase-admin/firestore';
-import { getFunctions } from 'firebase-admin/functions';
 import * as crypto from 'crypto';
 
 setGlobalOptions({ maxInstances: 15, region: 'us-central1' });
@@ -247,105 +244,6 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function nowPlusSeconds(sec: number) {
-  return Timestamp.fromMillis(Date.now() + sec * 1000);
-}
-
-// Queue para tareas (Cloud Tasks managed por Firebase)
-const leaderQueue = getFunctions().taskQueue('leader-selection');
-
-// ====== Task: Selección de líderes ======
-export const selectLeadersTask = onTaskDispatched(
-  { region: 'us-central1', retryConfig: { maxAttempts: 3 } },
-  async () => {
-    const db = admin.firestore();
-    const ref = db.doc(MATCH_DOC_PATH);
-
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) return;
-
-      const match = snap.data() as any;
-
-      // Guardas / idempotencia
-      if (match.estado !== 'seleccionando_lideres') return;
-      const queue: string[] = Array.isArray(match.queue) ? match.queue : [];
-      if (queue.length !== 10) return;
-
-      const team1Players: string[] = match?.team1?.players ?? [];
-      const team2Players: string[] = match?.team2?.players ?? [];
-
-      // Si ya hay líderes, no hacemos nada
-      if (team1Players.length > 0 || team2Players.length > 0) return;
-
-      const shuffled = shuffle(queue);
-      const leaderA = shuffled[0];
-      const leaderB = shuffled[1];
-
-      const unassigned = queue.filter((id) => id !== leaderA && id !== leaderB);
-
-      tx.update(ref, {
-        estado: 'armando_equipos',
-        team1: { name: TEAM1_NAME, players: [leaderA] },
-        team2: { name: TEAM2_NAME, players: [leaderB] },
-        unassigned,
-        turn: 'team1', // arranca Team A
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-    });
-  }
-);
-
-// ====== Orchestrator: cuando hay 10 en cola -> seleccionando_lideres + agenda task ======
-export const matchOrchestrator = onDocumentWritten(
-  { document: MATCH_DOC_PATH, region: 'us-central1' },
-  async (event) => {
-    const after = event.data?.after;
-    if (!after?.exists) return;
-
-    const match = after.data() as any;
-
-    if (match.estado !== 'esperando_jugadores') return;
-
-    const queue: string[] = Array.isArray(match.queue) ? match.queue : [];
-    if (queue.length !== 10) return;
-
-    const db = admin.firestore();
-    const ref = db.doc(MATCH_DOC_PATH);
-
-    const deadlineAt = nowPlusSeconds(10);
-
-    const changed = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) return false;
-
-      const cur = snap.data() as any;
-      if (cur.estado !== 'esperando_jugadores') return false;
-
-      const curQueue: string[] = Array.isArray(cur.queue) ? cur.queue : [];
-      if (curQueue.length !== 10) return false;
-
-      tx.update(ref, {
-        estado: 'seleccionando_lideres',
-        phaseDeadlineAt: deadlineAt,
-        team1: { name: TEAM1_NAME, players: [] },
-        team2: { name: TEAM2_NAME, players: [] },
-        unassigned: [],
-        turn: 'team1',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      return true;
-    });
-
-    if (changed) {
-      await leaderQueue.enqueue(
-        { match: 'current' },
-        { scheduleTime: deadlineAt.toDate() }
-      );
-    }
-  }
-);
 
 // ====== Util: ejecutar comando en Pterodactyl (Client API) ======
 class PterodactylCommandError extends Error {
