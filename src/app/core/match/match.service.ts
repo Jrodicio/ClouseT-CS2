@@ -7,6 +7,7 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  Timestamp,
   FirestoreError,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
@@ -36,11 +37,15 @@ export type MatchDoc = {
   unassigned?: string[];
   turn?: 'team1' | 'team2';
   finalizeBy?: string[];
+  leaderSelectionAt?: Timestamp | null;
+  publishInProgress?: boolean;
+  publishedAt?: any;
 
   updatedAt?: any;
 };
 
-const MATCH_PATH = ['matches', 'current'] as const;
+const MATCH_DRAFT_PATH = ['matches', 'draft'] as const;
+const MATCH_CURRENT_PATH = ['matches', 'current'] as const;
 const DEFAULT_MAP_POOL = [
   'de_inferno',
   'de_mirage',
@@ -70,6 +75,9 @@ function initialMatch(): MatchDoc {
     bannedMaps: [],
     mapTurn: 'team1',
     mapBanCount: 0,
+    leaderSelectionAt: null,
+    publishInProgress: false,
+    publishedAt: null,
     updatedAt: serverTimestamp(),
   };
 }
@@ -120,12 +128,15 @@ function patchMissingFields(match: Partial<MatchDoc>): Partial<MatchDoc> {
 
 @Injectable({ providedIn: 'root' })
 export class MatchService {
-  readonly matchRef = doc(db, ...MATCH_PATH);
+  readonly matchRef = doc(db, ...MATCH_DRAFT_PATH);
+  readonly currentRef = doc(db, ...MATCH_CURRENT_PATH);
 
   private readonly _match$ = new BehaviorSubject<MatchDoc | null>(null);
   readonly match$ = this._match$.asObservable();
 
   private unsub: (() => void) | null = null;
+  private selectingLeaders = false;
+  private publishing = false;
 
   /**
    * Llamalo 1 vez (por ej. al entrar al Dashboard):
@@ -148,7 +159,12 @@ export class MatchService {
       this.unsub = onSnapshot(
         this.matchRef,
         (s) => {
-          this._match$.next((s.data() as MatchDoc) ?? null);
+          const data = (s.data() as MatchDoc) ?? null;
+          this._match$.next(data);
+          if (data) {
+            this.maybeSelectLeaders(data).catch(() => {});
+            this.maybePublishMatch(data).catch(() => {});
+          }
         },
         (err: FirestoreError) => {
           console.error('Match onSnapshot error:', err);
@@ -189,7 +205,17 @@ export class MatchService {
         queue: q,
         updatedAt: serverTimestamp(),
       };
-      if (!isValidEstado(match.estado)) {
+
+      if (q.length === 10) {
+        update.estado = 'seleccionando_lideres';
+        update.team1 = { name: 'Team A', players: [] };
+        update.team2 = { name: 'Team B', players: [] };
+        update.unassigned = [];
+        update.turn = 'team1';
+        update.leaderSelectionAt = Timestamp.fromMillis(Date.now() + 10_000);
+      }
+
+      if (!isValidEstado(match.estado) && !update.estado) {
         update.estado = 'esperando_jugadores';
       }
       tx.update(this.matchRef, update);
@@ -411,6 +437,8 @@ export class MatchService {
 
       tx.update(this.matchRef, update);
     });
+
+    await this.maybePublishMatch();
   }
 
   /**
@@ -453,6 +481,7 @@ export class MatchService {
 
       if (bothConfirmed) {
         tx.set(this.matchRef, initialMatch(), { merge: false });
+        tx.set(this.currentRef, initialMatch(), { merge: false });
         return;
       }
 
@@ -468,6 +497,124 @@ export class MatchService {
     if (!r.ok) {
       const t = await r.text().catch(() => '');
       throw new Error(`No se pudo cancelar el match (${r.status}) ${t}`.trim());
+    }
+
+    await setDoc(this.matchRef, initialMatch(), { merge: false });
+  }
+
+  private async maybeSelectLeaders(match?: MatchDoc): Promise<void> {
+    if (this.selectingLeaders) return;
+    const current = match ?? this._match$.getValue();
+    if (!current) return;
+    if (current.estado !== 'seleccionando_lideres') return;
+
+    const selectionAt = current.leaderSelectionAt;
+    if (!selectionAt) return;
+    if (selectionAt.toMillis() > Date.now()) return;
+
+    const queue = Array.isArray(current.queue) ? current.queue : [];
+    if (queue.length !== 10) return;
+
+    this.selectingLeaders = true;
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(this.matchRef);
+        if (!snap.exists()) return;
+        const cur = snap.data() as MatchDoc;
+        if (cur.estado !== 'seleccionando_lideres') return;
+
+        const curQueue = Array.isArray(cur.queue) ? [...cur.queue] : [];
+        if (curQueue.length !== 10) return;
+
+        const shuffled = [...curQueue].sort(() => Math.random() - 0.5);
+        const leaderA = shuffled[0];
+        const leaderB = shuffled[1];
+
+        const unassigned = curQueue.filter((id) => id !== leaderA && id !== leaderB);
+
+        tx.update(this.matchRef, {
+          estado: 'armando_equipos',
+          team1: { name: 'Team A', players: [leaderA] },
+          team2: { name: 'Team B', players: [leaderB] },
+          unassigned,
+          turn: 'team1',
+          leaderSelectionAt: null,
+          updatedAt: serverTimestamp(),
+        });
+      });
+    } finally {
+      this.selectingLeaders = false;
+    }
+  }
+
+  private async maybePublishMatch(match?: MatchDoc): Promise<void> {
+    if (this.publishing) return;
+    const current = match ?? this._match$.getValue();
+    if (!current) return;
+    if (current.publishInProgress || current.publishedAt) return;
+    if (current.estado !== 'seleccionando_mapa') return;
+
+    const t1 = current.team1?.players ?? [];
+    const t2 = current.team2?.players ?? [];
+    if (t1.length !== 5 || t2.length !== 5) return;
+    if (!current.map) return;
+
+    this.publishing = true;
+
+    try {
+      const result = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(this.matchRef);
+        if (!snap.exists()) return null;
+
+        const cur = snap.data() as MatchDoc;
+        if (cur.publishInProgress || cur.publishedAt) return null;
+        if (cur.estado !== 'seleccionando_mapa') return null;
+
+        const curT1 = cur.team1?.players ?? [];
+        const curT2 = cur.team2?.players ?? [];
+        if (curT1.length !== 5 || curT2.length !== 5) return null;
+        if (!cur.map) return null;
+
+        tx.update(this.matchRef, {
+          publishInProgress: true,
+          updatedAt: serverTimestamp(),
+        });
+
+        return cur;
+      });
+
+      if (!result) return;
+
+      const publishPayload: MatchDoc = {
+        estado: result.estado,
+        map: result.map,
+        team1: result.team1,
+        team2: result.team2,
+        queue: [],
+        mapPool: result.mapPool ?? [...DEFAULT_MAP_POOL],
+        bannedMaps: result.bannedMaps ?? [],
+        mapTurn: result.mapTurn ?? null,
+        mapBanCount: result.mapBanCount ?? 0,
+        unassigned: result.unassigned ?? [],
+        turn: result.turn ?? 'team1',
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(this.currentRef, publishPayload, { merge: false });
+
+      await setDoc(
+        this.matchRef,
+        {
+          publishInProgress: false,
+          publishedAt: serverTimestamp(),
+          estado: 'en_curso',
+          updatedAt: serverTimestamp(),
+        } as Partial<MatchDoc>,
+        { merge: true }
+      );
+    } finally {
+      this.publishing = false;
     }
   }
 

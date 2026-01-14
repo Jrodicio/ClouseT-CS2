@@ -25,6 +25,20 @@
                   >
                     Ver perfil
                   </a>
+                  <div class="dashboard-space-top-sm">
+                    <button
+                      (click)="refreshMyProfile(mySteamId)"
+                      class="button-27"
+                      [disabled]="steamRefreshBusy"
+                    >
+                      {{ steamRefreshBusy ? 'Actualizando…' : 'Actualizar datos' }}
+                    </button>
+                    @if (steamRefreshErr) {
+                      <div class="dashboard-error dashboard-space-top-sm">
+                        {{ steamRefreshErr }}
+                      </div>
+                    }
+                  </div>
                 </div>
               } @else {
                 <div class="dashboard-muted">Cargando perfil Steam…</div>
@@ -183,11 +197,6 @@
                         Ingresar al servidor
                       </a>
                     }
-                  }
-                  @if (serverConnectionError) {
-                    <div class="dashboard-error">
-                      {{ serverConnectionError }}
-                    </div>
                   }
                 }
               }

@@ -2,10 +2,12 @@ import { Component, DestroyRef, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { AsyncPipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { MatchService, MatchDoc } from '../../core/match/match.service';
 import { MatchBoardComponent } from './match-board.component';
+import { db } from '../../core/firebase/firebase';
 
 type SteamMe = {
   steamId: string;
@@ -36,9 +38,7 @@ export class DashboardComponent {
   private destroyRef = inject(DestroyRef);
 
   watchMatch = false;
-  serverConnection: ServerConnection | null = null;
-  serverConnectionError = '';
-  readonly fallbackServerConnection: ServerConnection = {
+  readonly serverConnection: ServerConnection = {
     host: '45.235.98.222',
     port: 27159,
     spectatePort: 27159,
@@ -49,6 +49,8 @@ export class DashboardComponent {
   // Steam cache
   steamMe: SteamMe | null = null;
   steamErr = '';
+  steamRefreshErr = '';
+  steamRefreshBusy = false;
   private profileCache = new Map<string, SteamMe>();
   private inflight = new Set<string>();
 
@@ -81,14 +83,10 @@ export class DashboardComponent {
         const sid = this.steamIdFromUid(u?.uid ?? '');
         if (!sid) return;
 
-        this.ensureProfile(sid)
+        this.ensureProfile(sid, true)
           .then((p) => (this.steamMe = p))
           .catch(() => {});
       });
-
-    this.loadServerConnection().catch((e) =>
-      console.error('loadServerConnection error', e)
-    );
   }
 
   steamIdFromUid(uid: string): string | null {
@@ -100,7 +98,7 @@ export class DashboardComponent {
     return this.profileCache.get(steamId) ?? null;
   }
 
-  async ensureProfile(steamId: string): Promise<SteamMe | null> {
+  async ensureProfile(steamId: string, allowRefresh = false): Promise<SteamMe | null> {
     if (!steamId) return null;
 
     const cached = this.profileCache.get(steamId);
@@ -111,38 +109,68 @@ export class DashboardComponent {
     try {
       this.inflight.add(steamId);
 
-      const r = await fetch(`/api/steam/me?steamId=${encodeURIComponent(steamId)}`);
-      if (!r.ok) {
-        const t = await r.text().catch(() => '');
-        throw new Error(`SteamMe HTTP ${r.status} ${t}`.trim());
+      const stored = await this.readProfileFromStore(steamId);
+      if (stored) {
+        this.profileCache.set(steamId, stored);
+        return stored;
       }
 
-      const data = (await r.json()) as SteamMe;
-      this.profileCache.set(steamId, data);
-      return data;
+      if (!allowRefresh) return null;
+
+      const fresh = await this.fetchAndStoreProfile(steamId);
+      this.profileCache.set(steamId, fresh);
+      return fresh;
     } finally {
       this.inflight.delete(steamId);
     }
   }
 
-  async loadServerConnection(): Promise<void> {
-    try {
-      const r = await fetch('/api/server/connection');
-      if (!r.ok) {
-        const t = await r.text().catch(() => '');
-        this.serverConnectionError = `No se pudo obtener el servidor (${r.status}) ${t}`.trim();
-        return;
-      }
+  private profileRef(steamId: string) {
+    return doc(db, 'steamProfiles', steamId);
+  }
 
-      this.serverConnection = (await r.json()) as ServerConnection;
-      this.serverConnectionError = '';
-    } catch (err: any) {
-      this.serverConnectionError = err?.message ?? String(err);
+  private async readProfileFromStore(steamId: string): Promise<SteamMe | null> {
+    const snap = await getDoc(this.profileRef(steamId));
+    if (!snap.exists()) return null;
+    const data = snap.data() as SteamMe;
+    if (!data?.steamId) return null;
+    return data;
+  }
+
+  private async fetchAndStoreProfile(steamId: string): Promise<SteamMe> {
+    const r = await fetch(`/api/steam/me?steamId=${encodeURIComponent(steamId)}`);
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      throw new Error(`SteamMe HTTP ${r.status} ${t}`.trim());
     }
+
+    const data = (await r.json()) as SteamMe;
+    await setDoc(
+      this.profileRef(steamId),
+      { ...data, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+    return data;
   }
 
   get activeServerConnection(): ServerConnection {
-    return this.serverConnection ?? this.fallbackServerConnection;
+    return this.serverConnection;
+  }
+
+  async refreshMyProfile(mySteamId: string | null): Promise<void> {
+    if (!mySteamId || this.steamRefreshBusy) return;
+    this.steamRefreshBusy = true;
+    this.steamRefreshErr = '';
+
+    try {
+      const data = await this.fetchAndStoreProfile(mySteamId);
+      this.profileCache.set(mySteamId, data);
+      this.steamMe = data;
+    } catch (err: any) {
+      this.steamRefreshErr = err?.message ?? String(err);
+    } finally {
+      this.steamRefreshBusy = false;
+    }
   }
 
   myStatus(match: MatchDoc | null, mySteamId: string | null): 'fuera' | 'cola' | 'team1' | 'team2' {
