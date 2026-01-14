@@ -159,11 +159,6 @@ export class MatchBoardComponent {
     return list.filter((x) => x && x !== la && x !== lb);
   }
 
-  titleFor(id: string): string {
-    const p = this.profileOf?.(id);
-    return p?.personaName ?? id;
-  }
-
   async onBanMap(mapName: string): Promise<void> {
     if (!this.canBan || this.busyBan) return;
     if (!mapName || this.isBanned(mapName)) return;

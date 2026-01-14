@@ -34,18 +34,16 @@
               <div
                 class="player-card"
                 [class.leader]="isLeaderA(id)"
-                [attr.title]="titleFor(id)"
               >
                 @if (profileOf(id); as p) {
                   <img
                     class="avatar"
                     [class.leaderAvatar]="isLeaderA(id)"
                     [src]="p.avatar"
+                    [attr.title]="p.personaName"
                     alt="avatar"
                   />
                   <div class="name">{{ p.personaName }}</div>
-                } @else {
-                  <div class="name">{{ id }}</div>
                 }
               </div>
             }
@@ -64,12 +62,10 @@
 
             <div class="centerGrid">
               @for (id of queue; track id) {
-                <div class="player-card tile" [attr.title]="titleFor(id)">
+                <div class="player-card tile">
                   @if (profileOf(id); as p) {
-                    <img class="avatar" [src]="p.avatar" alt="avatar" />
+                    <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
                     <div class="name">{{ p.personaName }}</div>
-                  } @else {
-                    <div class="name">{{ id }}</div>
                   }
                 </div>
               }
@@ -86,12 +82,10 @@
 
             <div class="centerGrid">
               @for (id of queue; track id) {
-                <div class="player-card tile" [attr.title]="titleFor(id)">
+                <div class="player-card tile">
                   @if (profileOf(id); as p) {
-                    <img class="avatar" [src]="p.avatar" alt="avatar" />
+                    <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
                     <div class="name">{{ p.personaName }}</div>
-                  } @else {
-                    <div class="name">{{ id }}</div>
                   }
                 </div>
               }
@@ -113,14 +107,11 @@
                   class="player-card tile"
                   [class.selectable]="canPick && !busyPick"
                   [class.disabled]="!canPick || busyPick"
-                  [attr.title]="titleFor(id)"
                   (click)="onPick(id)"
                 >
                   @if (profileOf(id); as p) {
-                    <img class="avatar" [src]="p.avatar" alt="avatar" />
+                    <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
                     <div class="name">{{ p.personaName }}</div>
-                  } @else {
-                    <div class="name">{{ id }}</div>
                   }
                 </div>
               }
@@ -241,18 +232,16 @@
               <div
                 class="player-card"
                 [class.leader]="isLeaderB(id)"
-                [attr.title]="titleFor(id)"
               >
                 @if (profileOf(id); as p) {
                   <img
                     class="avatar"
                     [class.leaderAvatar]="isLeaderB(id)"
                     [src]="p.avatar"
+                    [attr.title]="p.personaName"
                     alt="avatar"
                   />
                   <div class="name">{{ p.personaName }}</div>
-                } @else {
-                  <div class="name">{{ id }}</div>
                 }
               </div>
             }

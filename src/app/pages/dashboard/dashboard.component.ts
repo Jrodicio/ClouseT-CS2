@@ -145,14 +145,14 @@ export class DashboardComponent {
     const promise = (async () => {
       const stored = await this.readProfileFromStore(steamId);
       if (stored) {
-        this.profileCache.set(steamId, stored);
+        this.updateProfileCache(steamId, stored);
         return stored;
       }
 
       if (!allowRefresh) return null;
 
       const fresh = await this.fetchAndStoreProfile(steamId);
-      this.profileCache.set(steamId, fresh);
+      this.updateProfileCache(steamId, fresh);
       return fresh;
     })();
 
@@ -169,6 +169,18 @@ export class DashboardComponent {
 
   private profileRef(steamId: string) {
     return doc(db, 'steamProfiles', steamId);
+  }
+
+  private updateProfileCache(steamId: string, data: SteamMe, clearError = false) {
+    this.zone.run(() => {
+      this.profileCache.set(steamId, data);
+      if (this.currentUserSteamId === steamId) {
+        this.steamMe = data;
+      }
+      if (clearError) {
+        this.steamErr = '';
+      }
+    });
   }
 
   private syncProfileWatchers() {
@@ -199,11 +211,7 @@ export class DashboardComponent {
         const data = snap.data() as SteamMe;
         if (!data?.steamId) return;
 
-        this.zone.run(() => {
-          this.profileCache.set(steamId, data);
-          this.steamMe = data;
-          this.steamErr = '';
-        });
+        this.updateProfileCache(steamId, data, true);
       },
       (err) => {
         console.error('Steam profile onSnapshot error:', err);
@@ -251,10 +259,7 @@ export class DashboardComponent {
 
     try {
       const data = await this.fetchAndStoreProfile(mySteamId);
-      this.zone.run(() => {
-        this.profileCache.set(mySteamId, data);
-        this.steamMe = data;
-      });
+      this.updateProfileCache(mySteamId, data);
     } catch (err: any) {
       this.zone.run(() => {
         this.steamRefreshErr = err?.message ?? String(err);
