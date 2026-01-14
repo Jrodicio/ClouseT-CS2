@@ -208,8 +208,8 @@ export class DashboardComponent {
       this.profileRef(steamId),
       (snap) => {
         if (!snap.exists()) return;
-        const data = snap.data() as SteamMe;
-        if (!data?.steamId) return;
+        const data = this.normalizeProfile(steamId, snap.data() as Partial<SteamMe>);
+        if (!data) return;
 
         this.updateProfileCache(steamId, data, true);
       },
@@ -225,9 +225,19 @@ export class DashboardComponent {
   private async readProfileFromStore(steamId: string): Promise<SteamMe | null> {
     const snap = await getDoc(this.profileRef(steamId));
     if (!snap.exists()) return null;
-    const data = snap.data() as SteamMe;
-    if (!data?.steamId) return null;
-    return data;
+    return this.normalizeProfile(steamId, snap.data() as Partial<SteamMe>);
+  }
+
+  private normalizeProfile(steamId: string, data: Partial<SteamMe> | null): SteamMe | null {
+    if (!data) return null;
+    const normalized: SteamMe = {
+      steamId: data.steamId ?? steamId,
+      personaName: data.personaName ?? '',
+      avatar: data.avatar ?? '',
+      profileUrl: data.profileUrl ?? '',
+    };
+    if (!normalized.steamId) return null;
+    return normalized;
   }
 
   private async fetchAndStoreProfile(steamId: string): Promise<SteamMe> {
