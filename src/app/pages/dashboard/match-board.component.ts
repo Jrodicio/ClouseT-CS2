@@ -1,5 +1,7 @@
-import { Component, Input, NgZone, OnDestroy, inject } from '@angular/core';
+import { AsyncPipe } from '@angular/common';
+import { Component, Input, inject } from '@angular/core';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { Observable, of } from 'rxjs';
 import { MatchDoc } from '../../core/match/match.service';
 import { MatchService } from '../../core/match/match.service';
 import { db } from '../../core/firebase/firebase';
@@ -19,14 +21,12 @@ type ServerConnection = {
 @Component({
   standalone: true,
   selector: 'app-match-board',
+  imports: [AsyncPipe],
   templateUrl: './match-board.component.html',
   styleUrl: './match-board.component.css',
 })
-export class MatchBoardComponent implements OnDestroy {
+export class MatchBoardComponent {
   private matchSvc = inject(MatchService);
-  private zone = inject(NgZone);
-  private profileWatchers = new Map<string, () => void>();
-  private profileCache = new Map<string, SteamMe>();
 
   readonly mapPool = [
     'de_inferno',
@@ -41,7 +41,6 @@ export class MatchBoardComponent implements OnDestroy {
   private matchValue!: MatchDoc;
   @Input({ required: true }) set match(value: MatchDoc) {
     this.matchValue = value;
-    this.syncProfileWatchers();
   }
   get match(): MatchDoc {
     return this.matchValue;
@@ -168,31 +167,20 @@ export class MatchBoardComponent implements OnDestroy {
     return list.filter((x) => x && x !== la && x !== lb);
   }
 
-  profileOf(steamId: string): SteamMe | null {
-    return this.profileCache.get(steamId) ?? null;
-  }
-
   private profileRef(steamId: string) {
     return doc(db, 'steamProfiles', steamId);
   }
 
-  private syncProfileWatchers() {
-    const desired = new Set<string>([
-      ...(this.teamA ?? []),
-      ...(this.teamB ?? []),
-      ...(this.queue ?? []),
-      ...(this.unassigned ?? []),
-    ]);
-
-    for (const steamId of desired) {
-      if (!steamId || this.profileWatchers.has(steamId)) continue;
+  profile$(steamId: string): Observable<SteamMe | null> {
+    if (!steamId) {
+      return of(null);
+    }
+    return new Observable<SteamMe | null>((subscriber) => {
       const unsubscribe = onSnapshot(
         this.profileRef(steamId),
         (snap) => {
           if (!snap.exists()) {
-            this.zone.run(() => {
-              this.profileCache.delete(steamId);
-            });
+            subscriber.next(null);
             return;
           }
           const data = snap.data() as Partial<SteamMe>;
@@ -202,35 +190,19 @@ export class MatchBoardComponent implements OnDestroy {
             avatar: data.avatar ?? '',
             profileUrl: data.profileUrl ?? '',
           };
-          if (!normalized.steamId) return;
-          this.zone.run(() => {
-            this.profileCache.set(steamId, normalized);
-          });
+          if (!normalized.steamId) {
+            subscriber.next(null);
+            return;
+          }
+          subscriber.next(normalized);
         },
         (err) => {
           console.error('Match board profile onSnapshot error:', err);
+          subscriber.next(null);
         }
       );
-      this.profileWatchers.set(steamId, unsubscribe);
-    }
-
-    for (const [steamId, unsubscribe] of this.profileWatchers) {
-      if (!desired.has(steamId)) {
-        unsubscribe();
-        this.profileWatchers.delete(steamId);
-        this.zone.run(() => {
-          this.profileCache.delete(steamId);
-        });
-      }
-    }
-  }
-
-  ngOnDestroy() {
-    for (const unsubscribe of this.profileWatchers.values()) {
-      unsubscribe();
-    }
-    this.profileWatchers.clear();
-    this.profileCache.clear();
+      return () => unsubscribe();
+    });
   }
 
   async onBanMap(mapName: string): Promise<void> {

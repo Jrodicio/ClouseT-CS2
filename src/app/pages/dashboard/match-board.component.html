@@ -35,7 +35,7 @@
                 class="player-card"
                 [class.leader]="isLeaderA(id)"
               >
-                @if (profileOf(id); as p) {
+                @if (profile$(id) | async; as p) {
                   <img
                     class="avatar"
                     [class.leaderAvatar]="isLeaderA(id)"
@@ -44,6 +44,8 @@
                     alt="avatar"
                   />
                   <div class="name">{{ p.personaName }}</div>
+                } @else {
+                  <div class="name placeholder">{{ id }}</div>
                 }
               </div>
             }
@@ -63,9 +65,11 @@
             <div class="centerGrid">
               @for (id of queue; track id) {
                 <div class="player-card tile">
-                  @if (profileOf(id); as p) {
+                  @if (profile$(id) | async; as p) {
                     <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
                     <div class="name">{{ p.personaName }}</div>
+                  } @else {
+                    <div class="name placeholder">{{ id }}</div>
                   }
                 </div>
               }
@@ -83,9 +87,11 @@
             <div class="centerGrid">
               @for (id of queue; track id) {
                 <div class="player-card tile">
-                  @if (profileOf(id); as p) {
+                  @if (profile$(id) | async; as p) {
                     <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
                     <div class="name">{{ p.personaName }}</div>
+                  } @else {
+                    <div class="name placeholder">{{ id }}</div>
                   }
                 </div>
               }
@@ -109,9 +115,11 @@
                   [class.disabled]="!canPick || busyPick"
                   (click)="onPick(id)"
                 >
-                  @if (profileOf(id); as p) {
+                  @if (profile$(id) | async; as p) {
                     <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
                     <div class="name">{{ p.personaName }}</div>
+                  } @else {
+                    <div class="name placeholder">{{ id }}</div>
                   }
                 </div>
               }
@@ -233,7 +241,7 @@
                 class="player-card"
                 [class.leader]="isLeaderB(id)"
               >
-                @if (profileOf(id); as p) {
+                @if (profile$(id) | async; as p) {
                   <img
                     class="avatar"
                     [class.leaderAvatar]="isLeaderB(id)"
@@ -242,6 +250,8 @@
                     alt="avatar"
                   />
                   <div class="name">{{ p.personaName }}</div>
+                } @else {
+                  <div class="name placeholder">{{ id }}</div>
                 }
               </div>
             }
