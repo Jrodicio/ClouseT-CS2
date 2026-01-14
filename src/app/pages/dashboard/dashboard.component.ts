@@ -52,7 +52,7 @@ export class DashboardComponent {
   steamRefreshErr = '';
   steamRefreshBusy = false;
   private profileCache = new Map<string, SteamMe>();
-  private inflight = new Set<string>();
+  private inflight = new Map<string, Promise<SteamMe | null>>();
 
   match$ = this.matchSvc.match$;
 
@@ -104,11 +104,15 @@ export class DashboardComponent {
     const cached = this.profileCache.get(steamId);
     if (cached) return cached;
 
-    if (this.inflight.has(steamId)) return null;
+    const existing = this.inflight.get(steamId);
+    if (existing) {
+      const result = await existing;
+      const cachedAfter = this.profileCache.get(steamId);
+      if (cachedAfter) return cachedAfter;
+      if (!allowRefresh) return result ?? null;
+    }
 
-    try {
-      this.inflight.add(steamId);
-
+    const promise = (async () => {
       const stored = await this.readProfileFromStore(steamId);
       if (stored) {
         this.profileCache.set(steamId, stored);
@@ -120,8 +124,16 @@ export class DashboardComponent {
       const fresh = await this.fetchAndStoreProfile(steamId);
       this.profileCache.set(steamId, fresh);
       return fresh;
+    })();
+
+    this.inflight.set(steamId, promise);
+
+    try {
+      return await promise;
     } finally {
-      this.inflight.delete(steamId);
+      if (this.inflight.get(steamId) === promise) {
+        this.inflight.delete(steamId);
+      }
     }
   }
 
