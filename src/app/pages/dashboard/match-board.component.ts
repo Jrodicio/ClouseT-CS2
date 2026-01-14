@@ -48,7 +48,6 @@ export class MatchBoardComponent {
   @Input() connection: ServerConnection | null = null;
 
   // UI state local
-  selectedId: string | null = null;
   busyPick = false;
   pickErr = '';
   busyBan = false;
@@ -165,16 +164,8 @@ export class MatchBoardComponent {
     return p?.personaName ?? id;
   }
 
-  onSelect(id: string): void {
-    if (!id) return;
-    if (this.match?.estado !== 'armando_equipos') return;
-    // UI: cualquiera puede seleccionar para mirar, pero el pick solo lo puede ejecutar el líder
-    this.selectedId = this.selectedId === id ? null : id;
-    this.pickErr = '';
-  }
-
   async onBanMap(mapName: string): Promise<void> {
-    if (!this.canBan) return;
+    if (!this.canBan || this.busyBan) return;
     if (!mapName || this.isBanned(mapName)) return;
 
     try {
@@ -189,18 +180,15 @@ export class MatchBoardComponent {
     }
   }
 
-  async onPick(): Promise<void> {
-    if (!this.canPick) return;
-    if (!this.selectedId) return;
+  async onPick(id: string): Promise<void> {
+    if (!this.canPick || this.busyPick) return;
+    if (!id) return;
 
     try {
       this.busyPick = true;
       this.pickErr = '';
 
-      await this.matchSvc.pickPlayer(this.mySteamId!, this.selectedId);
-
-      // reset selección si salió bien
-      this.selectedId = null;
+      await this.matchSvc.pickPlayer(this.mySteamId!, id);
     } catch (e: any) {
       this.pickErr = e?.message ?? String(e);
     } finally {
