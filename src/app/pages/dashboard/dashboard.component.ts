@@ -1,8 +1,8 @@
-import { Component, DestroyRef, inject } from '@angular/core';
+import { Component, DestroyRef, inject, NgZone } from '@angular/core';
 import { Router } from '@angular/router';
 import { AsyncPipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { MatchService, MatchDoc } from '../../core/match/match.service';
@@ -36,6 +36,7 @@ export class DashboardComponent {
   matchSvc = inject(MatchService);
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
+  private zone = inject(NgZone);
 
   watchMatch = false;
   readonly serverConnection: ServerConnection = {
@@ -53,10 +54,20 @@ export class DashboardComponent {
   steamRefreshBusy = false;
   private profileCache = new Map<string, SteamMe>();
   private inflight = new Map<string, Promise<SteamMe | null>>();
+  private profileWatchers = new Map<string, () => void>();
+  private matchProfileIds = new Set<string>();
+  private currentUserSteamId: string | null = null;
 
   match$ = this.matchSvc.match$;
 
   constructor() {
+    this.destroyRef.onDestroy(() => {
+      for (const unsubscribe of this.profileWatchers.values()) {
+        unsubscribe();
+      }
+      this.profileWatchers.clear();
+    });
+
     // 1) asegurar doc + realtime
     this.matchSvc.ensureAndSubscribe().catch((e) => console.error('ensureAndSubscribe error', e));
 
@@ -64,7 +75,11 @@ export class DashboardComponent {
     this.matchSvc.match$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((m) => {
-        if (!m) return;
+        if (!m) {
+          this.matchProfileIds = new Set();
+          this.syncProfileWatchers();
+          return;
+        }
 
         const ids = new Set<string>([
           ...(m.team1?.players ?? []),
@@ -72,6 +87,9 @@ export class DashboardComponent {
           ...(m.queue ?? []),
           ...(((m as any).unassigned ?? []) as string[]),
         ]);
+
+        this.matchProfileIds = ids;
+        this.syncProfileWatchers();
 
         for (const id of ids) this.ensureProfile(id).catch(() => {});
       });
@@ -81,10 +99,22 @@ export class DashboardComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((u) => {
         const sid = this.steamIdFromUid(u?.uid ?? '');
-        if (!sid) return;
+        this.currentUserSteamId = sid;
+        this.syncProfileWatchers();
+
+        if (!sid) {
+          this.zone.run(() => {
+            this.steamMe = null;
+          });
+          return;
+        }
 
         this.ensureProfile(sid, true)
-          .then((p) => (this.steamMe = p))
+          .then((p) => {
+            this.zone.run(() => {
+              this.steamMe = p;
+            });
+          })
           .catch(() => {});
       });
   }
@@ -141,6 +171,49 @@ export class DashboardComponent {
     return doc(db, 'steamProfiles', steamId);
   }
 
+  private syncProfileWatchers() {
+    const desired = new Set<string>(this.matchProfileIds);
+    if (this.currentUserSteamId) {
+      desired.add(this.currentUserSteamId);
+    }
+
+    for (const steamId of desired) {
+      if (!this.profileWatchers.has(steamId)) {
+        this.profileWatchers.set(steamId, this.watchProfile(steamId));
+      }
+    }
+
+    for (const [steamId, unsubscribe] of this.profileWatchers) {
+      if (!desired.has(steamId)) {
+        unsubscribe();
+        this.profileWatchers.delete(steamId);
+      }
+    }
+  }
+
+  private watchProfile(steamId: string): () => void {
+    return onSnapshot(
+      this.profileRef(steamId),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as SteamMe;
+        if (!data?.steamId) return;
+
+        this.zone.run(() => {
+          this.profileCache.set(steamId, data);
+          this.steamMe = data;
+          this.steamErr = '';
+        });
+      },
+      (err) => {
+        console.error('Steam profile onSnapshot error:', err);
+        this.zone.run(() => {
+          this.steamErr = err?.message ?? String(err);
+        });
+      }
+    );
+  }
+
   private async readProfileFromStore(steamId: string): Promise<SteamMe | null> {
     const snap = await getDoc(this.profileRef(steamId));
     if (!snap.exists()) return null;
@@ -171,17 +244,25 @@ export class DashboardComponent {
 
   async refreshMyProfile(mySteamId: string | null): Promise<void> {
     if (!mySteamId || this.steamRefreshBusy) return;
-    this.steamRefreshBusy = true;
-    this.steamRefreshErr = '';
+    this.zone.run(() => {
+      this.steamRefreshBusy = true;
+      this.steamRefreshErr = '';
+    });
 
     try {
       const data = await this.fetchAndStoreProfile(mySteamId);
-      this.profileCache.set(mySteamId, data);
-      this.steamMe = data;
+      this.zone.run(() => {
+        this.profileCache.set(mySteamId, data);
+        this.steamMe = data;
+      });
     } catch (err: any) {
-      this.steamRefreshErr = err?.message ?? String(err);
+      this.zone.run(() => {
+        this.steamRefreshErr = err?.message ?? String(err);
+      });
     } finally {
-      this.steamRefreshBusy = false;
+      this.zone.run(() => {
+        this.steamRefreshBusy = false;
+      });
     }
   }
 
