@@ -67,9 +67,9 @@
                 <div class="player-card tile" [attr.title]="titleFor(id)">
                   @if (profileOf(id); as p) {
                     <img class="avatar" [src]="p.avatar" alt="avatar" />
-                    <div class="name tiny">{{ p.personaName }}</div>
+                    <div class="name">{{ p.personaName }}</div>
                   } @else {
-                    <div class="name tiny">{{ id }}</div>
+                    <div class="name">{{ id }}</div>
                   }
                 </div>
               }
@@ -89,9 +89,9 @@
                 <div class="player-card tile" [attr.title]="titleFor(id)">
                   @if (profileOf(id); as p) {
                     <img class="avatar" [src]="p.avatar" alt="avatar" />
-                    <div class="name tiny">{{ p.personaName }}</div>
+                    <div class="name">{{ p.personaName }}</div>
                   } @else {
-                    <div class="name tiny">{{ id }}</div>
+                    <div class="name">{{ id }}</div>
                   }
                 </div>
               }
@@ -102,7 +102,7 @@
             <div class="center__title">Jugadores disponibles</div>
 
             @if (canPick) {
-              <div class="hint">Es tu turno. Elegí un jugador y apretá Pickear.</div>
+              <div class="hint">Es tu turno. Elegí un jugador haciendo click.</div>
             } @else {
               <div class="hint">Solo el líder del turno puede pickear.</div>
             }
@@ -110,16 +110,17 @@
             <div class="centerGrid">
               @for (id of availableIds; track id) {
                 <div
-                  class="player-card tile selectable"
-                  [class.selected]="selectedId === id"
+                  class="player-card tile"
+                  [class.selectable]="canPick && !busyPick"
+                  [class.disabled]="!canPick || busyPick"
                   [attr.title]="titleFor(id)"
-                  (click)="onSelect(id)"
+                  (click)="onPick(id)"
                 >
                   @if (profileOf(id); as p) {
                     <img class="avatar" [src]="p.avatar" alt="avatar" />
-                    <div class="name tiny">{{ p.personaName }}</div>
+                    <div class="name">{{ p.personaName }}</div>
                   } @else {
-                    <div class="name tiny">{{ id }}</div>
+                    <div class="name">{{ id }}</div>
                   }
                 </div>
               }
@@ -134,18 +135,6 @@
                 {{ pickErr }}
               </div>
             }
-
-            <div style="margin-top:12px;display:flex;gap:10px;">
-              <button
-                class="btn primary"
-                type="button"
-                [disabled]="!canPick || !selectedId || busyPick"
-                (click)="onPick()"
-                style="width:100%;"
-              >
-                {{ busyPick ? 'Pickeando…' : 'Pickear' }}
-              </button>
-            </div>
           }
 
           @case ('seleccionando_mapa') {
@@ -164,17 +153,14 @@
 
             <div class="mapList">
               @for (m of mapPool; track m) {
-                <div class="mapRow" [class.banned]="isBanned(m)">
+                <div
+                  class="mapRow"
+                  [class.banned]="isBanned(m)"
+                  [class.selectable]="canBan && !busyBan && !isBanned(m)"
+                  (click)="onBanMap(m)"
+                >
                   <div class="mapThumb"></div>
                   <div class="mapName">{{ m }}</div>
-                  <button
-                    class="btn"
-                    type="button"
-                    [disabled]="busyBan || !canBan || isBanned(m)"
-                    (click)="onBanMap(m)"
-                  >
-                    {{ isBanned(m) ? 'Baneado' : (busyBan ? 'Baneando…' : 'Ban') }}
-                  </button>
                 </div>
               }
             </div>

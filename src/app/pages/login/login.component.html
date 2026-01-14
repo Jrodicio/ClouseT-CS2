@@ -12,24 +12,6 @@
             <span>Login con Anon</span>
         </button>
 
-        @if (isDevHost) {
-          <div class="dev-login">
-            <label class="dev-label" for="devSteamId">SteamID (dev)</label>
-            <input
-              id="devSteamId"
-              class="dev-input"
-              type="text"
-              inputmode="numeric"
-              [(ngModel)]="devSteamId"
-              placeholder="76561198000000000"
-            />
-            <button (click)="loginDev()" class="button-27 steam-btn dev-btn" role="button">
-              <span>Login fake (dev)</span>
-            </button>
-            <div class="dev-note">Solo disponible en entornos locales/dev.</div>
-          </div>
-        }
-
         @if (loading) {
           <p style="margin-top:12px;">Procesando...</p>
         }

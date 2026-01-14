@@ -68,6 +68,7 @@
   box-sizing: border-box;
   margin: 4px;
   min-height: 52px;
+  color: #fffffe;
 }
 
 .player-card.leader {
@@ -100,11 +101,6 @@
   align-items: center;
 }
 
-.tiny {
-  font-size: 11px;
-  font-weight: 600;
-}
-
 .hint {
   font-size: 12px;
   opacity: 0.7;
@@ -126,9 +122,9 @@
   cursor: pointer;
 }
 
-.tile.selected {
-  border-width: 2px;
-  border-color: #fffffe;
+.disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .err {
@@ -147,7 +143,7 @@
 
 .mapRow {
   display: grid;
-  grid-template-columns: 44px 1fr 70px;
+  grid-template-columns: 44px 1fr;
   gap: 10px;
   align-items: center;
   border: 1px solid #ddd;
