@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, NgZone } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import {
   doc,
@@ -138,6 +138,8 @@ export class MatchService {
   private selectingLeaders = false;
   private publishing = false;
 
+  constructor(private zone: NgZone) {}
+
   /**
    * Llamalo 1 vez (por ej. al entrar al Dashboard):
    * - crea el singleton si no existe
@@ -160,7 +162,9 @@ export class MatchService {
         this.matchRef,
         (s) => {
           const data = (s.data() as MatchDoc) ?? null;
-          this._match$.next(data);
+          this.zone.run(() => {
+            this._match$.next(data);
+          });
           if (data) {
             this.maybeSelectLeaders(data).catch(() => {});
             this.maybePublishMatch(data).catch(() => {});
@@ -168,7 +172,9 @@ export class MatchService {
         },
         (err: FirestoreError) => {
           console.error('Match onSnapshot error:', err);
-          this._match$.next(null);
+          this.zone.run(() => {
+            this._match$.next(null);
+          });
         }
       );
     }

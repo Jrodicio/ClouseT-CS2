@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, NgZone } from '@angular/core';
 import {
   User,
   onAuthStateChanged,
@@ -13,11 +13,13 @@ import { signInAnonymously } from 'firebase/auth';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+  constructor(private zone: NgZone) {}
+
   user$ = new Observable<User | null>((subscriber) => {
     const unsub = onAuthStateChanged(
       auth,
-      (user) => subscriber.next(user),
-      (err) => subscriber.error(err)
+      (user) => this.zone.run(() => subscriber.next(user)),
+      (err) => this.zone.run(() => subscriber.error(err))
     );
     return () => unsub();
   });
@@ -30,8 +32,10 @@ export class AuthService {
   async getUserOnce(): Promise<User | null> {
     return await new Promise((resolve) => {
       const unsub = onAuthStateChanged(auth, (user) => {
-        unsub();
-        resolve(user ?? null);
+        this.zone.run(() => {
+          unsub();
+          resolve(user ?? null);
+        });
       });
     });
   }
