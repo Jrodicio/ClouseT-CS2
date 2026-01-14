@@ -91,7 +91,9 @@ export class DashboardComponent {
         this.matchProfileIds = ids;
         this.syncProfileWatchers();
 
-        for (const id of ids) this.ensureProfile(id).catch(() => {});
+        for (const id of ids) {
+          this.ensureProfile(id, true).catch(() => {});
+        }
       });
 
     // 3) Cargar mi perfil auto
@@ -130,9 +132,6 @@ export class DashboardComponent {
 
   async ensureProfile(steamId: string, allowRefresh = false): Promise<SteamMe | null> {
     if (!steamId) return null;
-
-    const cached = this.profileCache.get(steamId);
-    if (cached) return cached;
 
     const existing = this.inflight.get(steamId);
     if (existing) {
