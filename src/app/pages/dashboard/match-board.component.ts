@@ -168,7 +168,23 @@ export class MatchBoardComponent {
   }
 
   private profileRef(steamId: string) {
-    return doc(db, 'steamProfiles', steamId);
+    return doc(db, 'steamProfile', steamId);
+  }
+
+  readonly fallbackAvatar = '/steam-logo.png';
+
+  avatarSrc(profile: SteamMe | null): string {
+    if (profile?.avatar?.trim()) {
+      return profile.avatar;
+    }
+    return this.fallbackAvatar;
+  }
+
+  displayName(profile: SteamMe | null): string {
+    if (profile?.personaName?.trim()) {
+      return profile.personaName;
+    }
+    return 'Jugador';
   }
 
   profile$(steamId: string): Observable<SteamMe | null> {

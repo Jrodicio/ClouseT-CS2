@@ -81,7 +81,7 @@ export class DashboardComponent {
   }
 
   private profileRef(steamId: string) {
-    return doc(db, 'steamProfiles', steamId);
+    return doc(db, 'steamProfile', steamId);
   }
 
   private async readProfileFromStore(steamId: string): Promise<SteamMe | null> {
