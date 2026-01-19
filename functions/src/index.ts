@@ -659,27 +659,37 @@ export const api = onRequest(
             apiKey
           )}&steamids=${encodeURIComponent(steamId)}`;
 
-        const r = await fetch(url);
-        if (!r.ok) {
-          res.status(502).send(`Steam API error: ${r.status}`);
-          return;
-        }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        try {
+          const r = await fetch(url, { signal: controller.signal });
+          if (!r.ok) {
+            res.status(502).send(`Steam API error: ${r.status}`);
+            return;
+          }
 
-        const data = await r.json();
-        const player = data?.response?.players?.[0];
-        if (!player) {
-          res.status(404).send('Player not found');
-          return;
-        }
+          const data = await r.json();
+          const player = data?.response?.players?.[0];
+          if (!player) {
+            res.status(404).send('Player not found');
+            return;
+          }
 
-        res.status(200).json({
-          steamId: player.steamid,
-          personaName: player.personaname,
-          avatar: player.avatarfull || player.avatarmedium || player.avatar,
-          profileUrl: player.profileurl,
-        });
-        return;
+          res.status(200).json({
+            steamId: player.steamid,
+            personaName: player.personaname,
+            avatar: player.avatarfull || player.avatarmedium || player.avatar,
+            profileUrl: player.profileurl,
+          });
+          return;
+        } finally {
+          clearTimeout(timeoutId);
+        }
       } catch (e: any) {
+        if (e?.name === 'AbortError') {
+          res.status(504).send('Steam API timeout');
+          return;
+        }
         logger.error(`steam/me error: ${e?.message ?? String(e)}`);
         res.status(500).send('steam/me exception');
         return;

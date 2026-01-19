@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, NgZone } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, inject, NgZone } from '@angular/core';
 import { Router } from '@angular/router';
 import { AsyncPipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -37,6 +37,7 @@ export class DashboardComponent {
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
   private zone = inject(NgZone);
+  private cdr = inject(ChangeDetectorRef);
 
   watchMatch = false;
   readonly serverConnection: ServerConnection = {
@@ -103,19 +104,27 @@ export class DashboardComponent {
   }
 
   private async fetchAndStoreProfile(steamId: string): Promise<SteamMe> {
-    const r = await fetch(`/api/steam/me?steamId=${encodeURIComponent(steamId)}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const r = await fetch(`/api/steam/me?steamId=${encodeURIComponent(steamId)}`, {
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
     if (!r.ok) {
       const t = await r.text().catch(() => '');
       throw new Error(`SteamMe HTTP ${r.status} ${t}`.trim());
     }
 
-    const data = (await r.json()) as SteamMe;
+    const data = (await r.json()) as Partial<SteamMe>;
+    const normalized = this.normalizeProfile(steamId, data);
+    if (!normalized) {
+      throw new Error('SteamMe response missing steamId');
+    }
     await setDoc(
       this.profileRef(steamId),
-      { ...data, updatedAt: serverTimestamp() },
+      { ...normalized, updatedAt: serverTimestamp() },
       { merge: true }
     );
-    return data;
+    return normalized;
   }
 
   private setCurrentUserSteamId(steamId: string | null) {
@@ -183,10 +192,12 @@ export class DashboardComponent {
     } catch (err: any) {
       this.zone.run(() => {
         this.steamRefreshErr = err?.message ?? String(err);
+        this.cdr.detectChanges();
       });
     } finally {
       this.zone.run(() => {
         this.steamRefreshBusy = false;
+        this.cdr.detectChanges();
       });
     }
   }
