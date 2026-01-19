@@ -4,7 +4,7 @@ import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import { defineSecret } from 'firebase-functions/params';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
-import * as crypto from 'crypto';
+// import * as crypto from 'crypto';
 
 setGlobalOptions({ maxInstances: 15, region: 'us-central1' });
 
@@ -190,6 +190,22 @@ function buildMatchJson(
     return { ok: false, reason: 'NOT_READY', error: 'Teams must have 5 players each' };
   }
 
+  console.log("jsonMatch:",{
+    ok: true,
+    match: {
+      num_maps: 1,
+      maplist: [map],
+      team1: {
+        name: typeof team1?.name === 'string' ? team1.name : TEAM1_NAME,
+        players: team1Normalized.names,
+      },
+      team2: {
+        name: typeof team2?.name === 'string' ? team2.name : TEAM2_NAME,
+        players: team2Normalized.names,
+      },
+    },
+  })
+
   return {
     ok: true,
     match: {
@@ -358,6 +374,7 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
 
     const matchConfigUrl = `https://${getPublicBaseUrl()}/api/match/config`;
     const cmd = `matchzy_loadmatch_url "${matchConfigUrl}"`;
+    console.log("CMD:",cmd);
     await pteroSendCommand(cmd);
 
     await ref.update({
