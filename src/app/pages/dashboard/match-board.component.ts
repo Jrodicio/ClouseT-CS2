@@ -169,7 +169,7 @@ export class MatchBoardComponent {
   }
 
   private profileRef(steamId: string) {
-    return doc(db, 'steamProfile', steamId);
+    return doc(db, 'steamProfiles', steamId);
   }
 
   readonly fallbackAvatar = '/steam-logo.png';
