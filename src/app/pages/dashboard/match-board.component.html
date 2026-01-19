@@ -39,13 +39,19 @@
                   <img
                     class="avatar"
                     [class.leaderAvatar]="isLeaderA(id)"
-                    [src]="p.avatar"
+                    [src]="avatarSrc(p)"
                     [attr.title]="p.personaName"
                     alt="avatar"
                   />
-                  <div class="name">{{ p.personaName }}</div>
+                  <div class="name">{{ displayName(p) }}</div>
                 } @else {
-                  <div class="name placeholder">{{ id }}</div>
+                  <img
+                    class="avatar"
+                    [class.leaderAvatar]="isLeaderA(id)"
+                    [src]="avatarSrc(null)"
+                    alt="avatar"
+                  />
+                  <div class="name placeholder">Cargando...</div>
                 }
               </div>
             }
@@ -66,10 +72,11 @@
               @for (id of queue; track id) {
                 <div class="player-card tile">
                   @if (profile$(id) | async; as p) {
-                    <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
-                    <div class="name">{{ p.personaName }}</div>
+                    <img class="avatar" [src]="avatarSrc(p)" [attr.title]="p.personaName" alt="avatar" />
+                    <div class="name">{{ displayName(p) }}</div>
                   } @else {
-                    <div class="name placeholder">{{ id }}</div>
+                    <img class="avatar" [src]="avatarSrc(null)" alt="avatar" />
+                    <div class="name placeholder">Cargando...</div>
                   }
                 </div>
               }
@@ -88,10 +95,11 @@
               @for (id of queue; track id) {
                 <div class="player-card tile">
                   @if (profile$(id) | async; as p) {
-                    <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
-                    <div class="name">{{ p.personaName }}</div>
+                    <img class="avatar" [src]="avatarSrc(p)" [attr.title]="p.personaName" alt="avatar" />
+                    <div class="name">{{ displayName(p) }}</div>
                   } @else {
-                    <div class="name placeholder">{{ id }}</div>
+                    <img class="avatar" [src]="avatarSrc(null)" alt="avatar" />
+                    <div class="name placeholder">Cargando...</div>
                   }
                 </div>
               }
@@ -116,10 +124,11 @@
                   (click)="onPick(id)"
                 >
                   @if (profile$(id) | async; as p) {
-                    <img class="avatar" [src]="p.avatar" [attr.title]="p.personaName" alt="avatar" />
-                    <div class="name">{{ p.personaName }}</div>
+                    <img class="avatar" [src]="avatarSrc(p)" [attr.title]="p.personaName" alt="avatar" />
+                    <div class="name">{{ displayName(p) }}</div>
                   } @else {
-                    <div class="name placeholder">{{ id }}</div>
+                    <img class="avatar" [src]="avatarSrc(null)" alt="avatar" />
+                    <div class="name placeholder">Cargando...</div>
                   }
                 </div>
               }
@@ -245,13 +254,19 @@
                   <img
                     class="avatar"
                     [class.leaderAvatar]="isLeaderB(id)"
-                    [src]="p.avatar"
+                    [src]="avatarSrc(p)"
                     [attr.title]="p.personaName"
                     alt="avatar"
                   />
-                  <div class="name">{{ p.personaName }}</div>
+                  <div class="name">{{ displayName(p) }}</div>
                 } @else {
-                  <div class="name placeholder">{{ id }}</div>
+                  <img
+                    class="avatar"
+                    [class.leaderAvatar]="isLeaderB(id)"
+                    [src]="avatarSrc(null)"
+                    alt="avatar"
+                  />
+                  <div class="name placeholder">Cargando...</div>
                 }
               </div>
             }

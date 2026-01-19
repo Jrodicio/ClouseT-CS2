@@ -113,14 +113,15 @@
 }
 
 .centerGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 4px;
 }
 
 .tile {
   min-height: 52px;
+  width: calc(100% - 8px);
 }
 
 .selectable {
