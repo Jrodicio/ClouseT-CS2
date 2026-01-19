@@ -54,6 +54,7 @@ export class MatchBoardComponent {
   @Input() leaderA: string | null = null;
   @Input() leaderB: string | null = null;
   @Input() connection: ServerConnection | null = null;
+  @Input() profileOf?: (steamId: string) => Observable<SteamMe | null>;
 
   // UI state local
   busyPick = false;
@@ -190,6 +191,9 @@ export class MatchBoardComponent {
   profile$(steamId: string): Observable<SteamMe | null> {
     if (!steamId) {
       return of(null);
+    }
+    if (this.profileOf) {
+      return this.profileOf(steamId);
     }
     return new Observable<SteamMe | null>((subscriber) => {
       const unsubscribe = onSnapshot(
