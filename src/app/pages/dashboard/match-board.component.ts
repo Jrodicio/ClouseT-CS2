@@ -1,7 +1,7 @@
 import { AsyncPipe } from '@angular/common';
-import { Component, Input, inject } from '@angular/core';
+import { Component, Input, NgZone, inject } from '@angular/core';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { Observable, of } from 'rxjs';
+import { Observable, of, shareReplay } from 'rxjs';
 import { MatchDoc } from '../../core/match/match.service';
 import { MatchService } from '../../core/match/match.service';
 import { db } from '../../core/firebase/firebase';
@@ -27,6 +27,8 @@ type ServerConnection = {
 })
 export class MatchBoardComponent {
   private matchSvc = inject(MatchService);
+  private zone = inject(NgZone);
+  private profileCache = new Map<string, Observable<SteamMe | null>>();
 
   readonly mapPool = [
     'de_inferno',
@@ -195,12 +197,16 @@ export class MatchBoardComponent {
     if (this.profileOf) {
       return this.profileOf(steamId);
     }
-    return new Observable<SteamMe | null>((subscriber) => {
+    const cached = this.profileCache.get(steamId);
+    if (cached) {
+      return cached;
+    }
+    const stream = new Observable<SteamMe | null>((subscriber) => {
       const unsubscribe = onSnapshot(
         this.profileRef(steamId),
         (snap) => {
           if (!snap.exists()) {
-            subscriber.next(null);
+            this.zone.run(() => subscriber.next(null));
             return;
           }
           const data = snap.data() as Partial<SteamMe>;
@@ -211,18 +217,20 @@ export class MatchBoardComponent {
             profileUrl: data.profileUrl ?? '',
           };
           if (!normalized.steamId) {
-            subscriber.next(null);
+            this.zone.run(() => subscriber.next(null));
             return;
           }
-          subscriber.next(normalized);
+          this.zone.run(() => subscriber.next(normalized));
         },
         (err) => {
           console.error('Match board profile onSnapshot error:', err);
-          subscriber.next(null);
+          this.zone.run(() => subscriber.next(null));
         }
       );
       return () => unsubscribe();
-    });
+    }).pipe(shareReplay({ bufferSize: 1, refCount: true }));
+    this.profileCache.set(steamId, stream);
+    return stream;
   }
 
   async onBanMap(mapName: string): Promise<void> {
