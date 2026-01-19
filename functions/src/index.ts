@@ -172,11 +172,41 @@ function normalizePlayers(
   return { ids, names: namesFromObject };
 }
 
-function buildMatchJson(
+async function getSteamProfileNames(
+  ids: string[]
+): Promise<{ names: Record<string, string>; missing: string[] }> {
+  const db = admin.firestore();
+  if (ids.length === 0) return { names: {}, missing: [] };
+
+  const refs = ids.map((id) => db.collection('steamProfiles').doc(id));
+  const snaps = await db.getAll(...refs);
+
+  const names: Record<string, string> = {};
+  const missing: string[] = [];
+
+  snaps.forEach((snap, idx) => {
+    const id = ids[idx];
+    if (!snap.exists) {
+      missing.push(id);
+      return;
+    }
+    const data = snap.data() as { personaName?: unknown } | undefined;
+    const personaName = typeof data?.personaName === 'string' ? data.personaName.trim() : '';
+    if (!personaName) {
+      missing.push(id);
+      return;
+    }
+    names[id] = personaName;
+  });
+
+  return { names, missing };
+}
+
+async function buildMatchJson(
   map: unknown,
   team1: { name?: unknown; players?: unknown },
   team2: { name?: unknown; players?: unknown }
-): MatchJsonResult {
+): Promise<MatchJsonResult> {
   if (!map || typeof map !== 'string') {
     return { ok: false, reason: 'NOT_READY', error: 'Missing map' };
   }
@@ -190,6 +220,25 @@ function buildMatchJson(
     return { ok: false, reason: 'NOT_READY', error: 'Teams must have 5 players each' };
   }
 
+  const ids = [...new Set([...team1Players, ...team2Players])];
+  const profiles = await getSteamProfileNames(ids);
+  if (profiles.missing.length > 0) {
+    return {
+      ok: false,
+      reason: 'NOT_READY',
+      error: `Missing steamProfiles for: ${profiles.missing.join(', ')}`,
+    };
+  }
+
+  const team1Names = team1Players.reduce<Record<string, string>>((acc, id) => {
+    acc[id] = profiles.names[id];
+    return acc;
+  }, {});
+  const team2Names = team2Players.reduce<Record<string, string>>((acc, id) => {
+    acc[id] = profiles.names[id];
+    return acc;
+  }, {});
+
   console.log("jsonMatch:",{
     ok: true,
     match: {
@@ -197,11 +246,11 @@ function buildMatchJson(
       maplist: [map],
       team1: {
         name: typeof team1?.name === 'string' ? team1.name : TEAM1_NAME,
-        players: team1Normalized.names,
+        players: team1Names,
       },
       team2: {
         name: typeof team2?.name === 'string' ? team2.name : TEAM2_NAME,
-        players: team2Normalized.names,
+        players: team2Names,
       },
     },
   })
@@ -213,11 +262,11 @@ function buildMatchJson(
       maplist: [map],
       team1: {
         name: typeof team1?.name === 'string' ? team1.name : TEAM1_NAME,
-        players: team1Normalized.names,
+        players: team1Names,
       },
       team2: {
         name: typeof team2?.name === 'string' ? team2.name : TEAM2_NAME,
-        players: team2Normalized.names,
+        players: team2Names,
       },
     },
   };
@@ -363,7 +412,7 @@ async function startMatchIfReady(): Promise<StartMatchResult> {
       return { ok: false, reason: 'NOT_READY' };
     }
 
-    const matchJsonResult = buildMatchJson(map, cur?.team1 ?? {}, cur?.team2 ?? {});
+    const matchJsonResult = await buildMatchJson(map, cur?.team1 ?? {}, cur?.team2 ?? {});
     if (!matchJsonResult.ok) {
       await ref.update({
         startInProgress: false,
@@ -747,7 +796,7 @@ export const api = onRequest(
         const team1Normalized = normalizePlayers(team1?.players, (team1 as any)?.playerNames);
         const team2Normalized = normalizePlayers(team2?.players, (team2 as any)?.playerNames);
 
-        const matchJsonResult = buildMatchJson(map, team1, team2);
+        const matchJsonResult = await buildMatchJson(map, team1, team2);
         if (!matchJsonResult.ok) {
           res.status(400).send(matchJsonResult.error);
           return;
