@@ -16,11 +16,11 @@ const STEAM_API_KEY = defineSecret('STEAM_API_KEY');
 // Pterodactyl (Client API)
 const PTERO_CLIENT_KEY = defineSecret('PTERO_CLIENT_KEY');
 const PTERO_SERVER_ID = defineSecret('PTERO_SERVER_ID');
-const PTERO_PANEL_ORIGIN = defineSecret('PTERO_PANEL_ORIGIN');
-const GAME_SERVER_HOST = defineSecret('GAME_SERVER_HOST');
-const GAME_SERVER_PORT = defineSecret('GAME_SERVER_PORT');
-const GAME_SERVER_SPECTATE_PORT = defineSecret('GAME_SERVER_SPECTATE_PORT');
-const PUBLIC_BASE_URL = defineSecret('PUBLIC_BASE_URL');
+const PTERO_PANEL_ORIGIN = 'https://pterodactyl.histeriaservers.com.ar';
+const GAME_SERVER_HOST = '45.235.98.222';
+const GAME_SERVER_PORT = '27159';
+const GAME_SERVER_SPECTATE_PORT = '27159';
+const PUBLIC_BASE_URL = 'https://clouset-cs2.web.app';
 
 // ====== Steam OpenID ======
 const STEAM_OPENID_ENDPOINT = 'https://steamcommunity.com/openid/login';
@@ -43,7 +43,7 @@ function isDevHost(host: string | undefined): boolean {
 }
 
 function getPublicBaseUrl(): string {
-  const explicitBaseUrl = PUBLIC_BASE_URL.value();
+  const explicitBaseUrl = PUBLIC_BASE_URL;
   if (explicitBaseUrl) {
     return explicitBaseUrl.replace(/\/+$/, '');
   }
@@ -100,9 +100,9 @@ type ServerConnectionInfo =
   | { ok: false; error: string };
 
 function getServerConnectionInfo(): ServerConnectionInfo {
-  const host = GAME_SERVER_HOST.value();
-  const portRaw = GAME_SERVER_PORT.value();
-  const spectatePortRaw = GAME_SERVER_SPECTATE_PORT.value() || portRaw;
+  const host = GAME_SERVER_HOST;
+  const portRaw = GAME_SERVER_PORT;
+  const spectatePortRaw = GAME_SERVER_SPECTATE_PORT || portRaw;
 
   if (!host || !portRaw) {
     return { ok: false, error: 'Missing GAME_SERVER_HOST or GAME_SERVER_PORT secret' };
@@ -313,7 +313,7 @@ class PterodactylCommandError extends Error {
 }
 
 async function pteroSendCommand(command: string): Promise<void> {
-  const panelOrigin = PTERO_PANEL_ORIGIN.value(); // ej https://pterodactyl.histeriaservers.com.ar
+  const panelOrigin = PTERO_PANEL_ORIGIN; // ej https://pterodactyl.histeriaservers.com.ar
   const serverId = PTERO_SERVER_ID.value(); // ej ba39664e
   const apiKey = PTERO_CLIENT_KEY.value(); // ptlc_...
 
@@ -470,7 +470,7 @@ export const autoStartMatch = onDocumentWritten(
   {
     document: MATCH_DOC_PATH,
     region: 'us-central1',
-    secrets: [PTERO_CLIENT_KEY, PTERO_SERVER_ID, PTERO_PANEL_ORIGIN, PUBLIC_BASE_URL],
+    secrets: [PTERO_CLIENT_KEY, PTERO_SERVER_ID],
   },
   async (event) => {
     const before = event.data?.before;
@@ -519,11 +519,6 @@ export const api = onRequest(
       STEAM_API_KEY,
       PTERO_CLIENT_KEY,
       PTERO_SERVER_ID,
-      PTERO_PANEL_ORIGIN,
-      GAME_SERVER_HOST,
-      GAME_SERVER_PORT,
-      GAME_SERVER_SPECTATE_PORT,
-      PUBLIC_BASE_URL,
     ],
     region: 'us-central1',
   },
